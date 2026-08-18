@@ -445,13 +445,13 @@ let mcpClient = null;
 
 const CATEGORY_META = {
   system: { dot: "bg-slate-500", desc: "The agent's fixed instructions — role, investigation approach, field semantics.", visible: "No — never shown to you" },
-  tools: { dot: "bg-slate-500", desc: "JSON schemas for the 5 SRE tools the model can call.", visible: "No" },
+  tools: { dot: "bg-slate-300", desc: "JSON schemas for the 5 SRE tools the model can call.", visible: "No" },
   user: { dot: "bg-white", desc: "The question you actually asked.", visible: "Yes — the user message bubble" },
   reasoning: { dot: "bg-accent", desc: "The model's narration before a tool call (“Let me check…”).", visible: "Yes — the left-accent-bar reasoning line" },
   thinking: { dot: "bg-fuchsia-400", desc: "Extended-thinking output (only present if the Thinking toggle was on for that turn).", visible: "Conditional — only when the Thinking toggle was on for that turn" },
   tool_call: { dot: "bg-warn", desc: "Arguments sent to a tool.", visible: "No — only via a tool card's “Raw” toggle" },
   tool_result: { dot: "bg-ok", errDot: "bg-err", desc: "Data returned from DynamoDB.", visible: "No — same “Raw” toggle caveat" },
-  answer: { dot: "bg-white", desc: "The final answer.", visible: "Yes — the rendered answer bubble" },
+  answer: { dot: "bg-sky-300", desc: "The final answer.", visible: "Yes — the rendered answer bubble" },
 };
 
 function dotClassFor(block) {
