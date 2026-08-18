@@ -28,6 +28,7 @@ import pytest
 MCP_PORT = 18797
 WEB_PORT = 18798
 STARTUP_TIMEOUT_S = 15
+TEST_MCP_AUTH_TOKEN = "http-routes-test-fixed-token"  # noqa: S105 — test-only, not a real secret
 
 
 def _wait_until_up(url, name):
@@ -58,7 +59,12 @@ def running_servers():
     other local read, with no isolation needed."""
     import os
 
-    env = {**os.environ, "MCP_SERVER_PORT": str(MCP_PORT), "WEB_SERVER_PORT": str(WEB_PORT)}
+    env = {
+        **os.environ,
+        "MCP_SERVER_PORT": str(MCP_PORT),
+        "WEB_SERVER_PORT": str(WEB_PORT),
+        "MCP_AUTH_TOKEN": TEST_MCP_AUTH_TOKEN,
+    }
     mcp_proc = subprocess.Popen(
         [sys.executable, "-m", "mcp_server.server"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
@@ -78,8 +84,8 @@ def running_servers():
                 proc.kill()
 
 
-def _status(url, method="GET"):
-    req = urllib.request.Request(url, method=method)
+def _status(url, method="GET", headers=None):
+    req = urllib.request.Request(url, method=method, headers=headers or {})
     try:
         return urllib.request.urlopen(req, timeout=5).status
     except urllib.error.HTTPError as e:
@@ -109,7 +115,19 @@ def test_web_server_routes(running_servers, path, expected):
     ],
 )
 def test_mcp_server_rest_routes(running_servers, path, expected):
-    assert _status(f"http://127.0.0.1:{MCP_PORT}{path}") == expected
+    """REST routes now require the same bearer token as /mcp (see
+    mcp-context-inspector's MultiTokenAuthMiddleware) — they used to be
+    open, which stopped being safe once this server is meant to be
+    handed out to other people, not just used solo."""
+    headers = {"Authorization": f"Bearer {TEST_MCP_AUTH_TOKEN}"}
+    assert _status(f"http://127.0.0.1:{MCP_PORT}{path}", headers=headers) == expected
+
+
+@pytest.mark.parametrize("path", ["/api/sessions", "/api/tool-metrics", "/api/cost"])
+def test_mcp_server_rest_routes_require_auth(running_servers, path):
+    """Pins the actual regression this exists to catch: these routes
+    must reject an unauthenticated request, not silently stay open."""
+    assert _status(f"http://127.0.0.1:{MCP_PORT}{path}") == 401
 
 
 def test_old_pre_restructure_chat_url_is_gone(running_servers):

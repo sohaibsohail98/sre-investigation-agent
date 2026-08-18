@@ -44,6 +44,8 @@ def _wait_for_server(proc, url, name):
         try:
             urllib.request.urlopen(url, timeout=1)
             return
+        except urllib.error.HTTPError:
+            return  # server is up and answering, even if this URL 401s/404s
         except (urllib.error.URLError, ConnectionRefusedError):
             time.sleep(0.3)
     raise RuntimeError(f"{name} did not respond at {url} within {SERVER_STARTUP_TIMEOUT_S}s")

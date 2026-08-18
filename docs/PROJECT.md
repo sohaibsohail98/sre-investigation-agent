@@ -228,22 +228,30 @@ The handshake itself: `web/mcp-client.js` — vanilla JS, no SDK —
 performs a genuine MCP Streamable-HTTP JSON-RPC handshake (`initialize`
 → `notifications/initialized` → `tools/list`) against `mcp_server`'s
 `/mcp` endpoint, tracking the `Mcp-Session-Id` response header per the
-spec, and now an `Authorization: Bearer <token>` header on every
-request. `mcp_server/server.py` gates `/mcp` (only that path — the REST
-routes stay open) behind `BearerAuthMiddleware`, a plain Starlette
-middleware comparing against `MCP_AUTH_TOKEN` — **not** the MCP SDK's
-own OAuth Resource Server support (`MCPServer(auth=...)`), which was
-investigated and rejected: it requires a real `issuer_url`, i.e. an
-actual OAuth/OIDC authorization server (Cognito, Auth0, self-hosted)
-has to exist for that machinery to mean anything — confirmed by reading
-`AuthSettings`' source, `issuer_url` is a required field with no
-"just verify this static token" escape hatch. Standing up a real
-identity provider is genuine infrastructure, wildly disproportionate to
-gating a single-user local dev server. The shared-secret token gives
-the same practical property (unauthenticated requests can't connect) at
-zero setup cost — printed fresh to the server's console on every run
-unless `MCP_AUTH_TOKEN` is set, the same trust model a Jupyter server's
-token uses.
+spec, and an `Authorization: Bearer <token>` header on every request.
+
+**Auth has since evolved past a single shared secret** — now that this
+MCP server (part of `mcp-context-inspector`) is meant to be handed out
+to other people connecting their own LLMs/agents, not just used solo.
+`mcp_server/server.py`'s `MultiTokenAuthMiddleware` (that repo) gates
+`/mcp` **and** `/api/*` (REST routes used to stay open — that stopped
+being safe once other people can reach this server) behind either the
+owner's `MCP_AUTH_TOKEN` (unchanged, still just a plain Starlette
+middleware comparing against an env var, zero setup) OR a per-user token
+minted after a real Google sign-in (`/auth/login` → Google Identity
+Services' credential flow → `/auth/verify` verifies the signed ID token
+server-side, mints/reuses a token per Google account). Still explicitly
+**not** the MCP SDK's own OAuth Resource Server support
+(`MCPServer(auth=...)`), which requires a real `issuer_url` — a full
+OAuth/OIDC authorization server (Cognito, Auth0, self-hosted) — and
+still not a hand-rolled OAuth 2.1 authorization server either (the
+heavier pattern investigated via a comparable project's implementation);
+Google Identity Services' one-tap credential flow gets "each person
+authenticates as themselves, revocably" without either. Known
+limitation: every valid token still sees *all* session history, not
+just its own holder's — there's no per-user data ownership in
+`metrics/store.py`. Full details: `mcp-context-inspector`'s own README,
+"Auth" section.
 
 Once connected, the panel calls the same 7 MCP tools directly
 (`get_recent_sessions`, `get_tool_metrics`, `get_cost_estimate`,
