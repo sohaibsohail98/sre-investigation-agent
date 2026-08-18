@@ -1,0 +1,13 @@
+# Local dev/testing only — not what gets deployed (see agent/requirements.txt
+# for the minimal set that actually ships in the AgentCore container).
+bedrock-agentcore
+boto3
+gradio
+mcp
+starlette
+uvicorn
+pytest
+playwright
+# mcp_server/ + metrics/ live here now — pinned to the initial commit;
+# bump the SHA deliberately, don't float on @main.
+git+https://github.com/sohaibsohail98/mcp-context-inspector@9dfedb23c9bd45d5faa2a6b46b0b4ed840b80a71

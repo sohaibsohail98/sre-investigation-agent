@@ -1,0 +1,88 @@
+name: Deploy AgentCore
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agent/**"
+      - "tools/**"
+      - "data/**"
+      - "metrics/**"
+      - "terraform/**"
+      - ".github/workflows/deploy-agentcore.yml"
+  workflow_dispatch: {} # manual trigger from the Actions tab
+
+permissions:
+  id-token: write # required for OIDC — no stored AWS keys
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: sohaib-bedrock-agentcore
+  IMAGE_TAG: sre-agent
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv && uv pip install -r requirements-dev.txt
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      # Costs real Bedrock invocations (8 scenarios) — runs on every push
+      # to catch prompt/tool regressions before they reach the deployed
+      # agent, same reasoning as running it locally per the README.
+      - run: uv run python -m tests.run_eval
+
+  deploy:
+    needs: eval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+
+      - name: Terraform apply (infra, excluding the runtime — it needs the image to exist first)
+        working-directory: terraform
+        run: |
+          terraform init
+          terraform apply -auto-approve \
+            -target=aws_ecr_repository.agent \
+            -target=aws_ecr_lifecycle_policy.agent \
+            -target=aws_dynamodb_table.metrics \
+            -target=aws_iam_role.runtime \
+            -target=aws_iam_role_policy.runtime
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Get account ID
+        id: account
+        run: echo "id=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin \
+            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      - name: Build and push (ARM64 — AgentCore requires it)
+        run: |
+          docker buildx build --platform linux/arm64 \
+            -f agent/Dockerfile \
+            -t ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            --push .
+
+      - name: Terraform apply (the runtime itself)
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve

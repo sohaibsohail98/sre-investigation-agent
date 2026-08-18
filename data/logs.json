@@ -1,0 +1,15 @@
+{
+  "payments-api": [
+    "14:32:01 connection pool exhausted",
+    "14:32:02 request timeout",
+    "14:32:03 database connection refused"
+  ],
+  "checkout-api": [
+    "11:05:12 upstream inventory-service timeout after 3000ms",
+    "11:05:14 retry attempt 1 failed",
+    "11:05:19 retry attempt 2 failed",
+    "11:05:20 circuit breaker opened for inventory-service"
+  ],
+  "auth-api": [],
+  "notifications": []
+}

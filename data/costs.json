@@ -1,0 +1,6 @@
+[
+  {"service": "payments-api",  "monthly_cost_usd": 420.50, "requests_per_day": 180000},
+  {"service": "checkout-api",  "monthly_cost_usd": 310.00, "requests_per_day": 140000},
+  {"service": "auth-api",      "monthly_cost_usd": 95.25,  "requests_per_day": 320000},
+  {"service": "notifications", "monthly_cost_usd": 40.00,  "requests_per_day": 60000}
+]

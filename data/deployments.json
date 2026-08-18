@@ -1,0 +1,4 @@
+[
+  {"service": "payments-api", "version": "v1.8.3", "deployed_at": "14:27"},
+  {"service": "auth-api",     "version": "v2.1.0", "deployed_at": "09:03"}
+]

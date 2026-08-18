@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SRE Agent — Chat</title>
+  <!-- The Tailwind CDN build logs "should not be used in production" —
+       a real warning for a public-facing site, not for this one: this
+       is a local, single-user dev tool (see docs/PROJECT.md's design
+       history), not something deployed for public traffic. Standing up
+       a PostCSS/CLI build step for a one-HTML-file demo would be
+       disproportionate; revisit only if this ever becomes a genuinely
+       public-facing page. -->
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: { DEFAULT: '#0b0d14', raised: '#12151f', card: '#171b28' },
+            accent: { DEFAULT: '#7c6cf6', soft: '#2a2247' },
+            ok: '#34d399',
+            warn: '#fbbf24',
+            err: '#f87171',
+          },
+          borderRadius: { xl: '0.875rem', '2xl': '1.25rem' },
+          boxShadow: { card: '0 8px 30px -8px rgb(0 0 0 / 0.5)' },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-surface to-[#141225] text-slate-200 antialiased">
+  <main class="mx-auto max-w-6xl px-4 py-8">
+    <nav class="flex items-center justify-between mb-8">
+      <h1 class="text-lg font-semibold text-slate-100">SRE Agent</h1>
+    </nav>
+
+    <article id="intro" class="rounded-2xl border border-white/5 bg-surface-card shadow-card p-5 mb-6 text-sm text-slate-400 space-y-3">
+      <p>
+        This is an AI agent that investigates incidents in a
+        <strong class="text-slate-200">deterministic mock infrastructure environment</strong> —
+        4 services with fixed metrics, logs, deployments, and cost data. That
+        content is genuinely <strong class="text-slate-200">live-queried from a
+        real DynamoDB table</strong> on every tool call, not read from a local
+        file — only the data's content is kept deterministic, on purpose, so
+        the eval suite's exact-match scoring stays meaningful. It has 5 tools
+        and decides which ones to use, and in what order, itself — nothing
+        here is scripted.
+      </p>
+      <p>
+        <strong class="text-slate-200">Every tool call streams live below as it happens</strong>
+        — you're watching the actual investigation, not a canned demo. It takes a
+        few seconds per question because each step is a real round-trip to the
+        model plus a real tool call.
+      </p>
+    </article>
+
+    <div class="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
+      <div class="min-w-0">
+        <div id="suggestions" class="flex flex-wrap gap-2 mb-6 text-sm text-slate-500">Loading suggested questions…</div>
+
+        <div id="messages" class="space-y-1"></div>
+
+        <div class="sticky bottom-4 mt-6 space-y-2">
+          <form id="chat-form" class="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-surface-raised shadow-card p-2">
+            <input
+              id="prompt-input"
+              type="text"
+              placeholder="Ask about a service…"
+              autocomplete="off"
+              required
+              class="order-1 flex-1 min-w-0 bg-transparent px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50"
+            >
+
+            <!-- basis-full forces this cluster onto its own line when the
+                 form wraps (narrow viewports) instead of cramming input +
+                 3 controls + Send into one row; sm:basis-auto puts it back
+                 inline, right before Send, once there's room. -->
+            <div class="order-3 sm:order-2 basis-full sm:basis-auto flex items-center justify-center sm:justify-start gap-0.5 shrink-0 sm:border-l sm:border-white/10 sm:pl-1.5 sm:mr-0.5">
+              <label
+                class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 cursor-pointer transition"
+                title="Open a real MCP handshake for live metrics"
+              >
+                <input type="checkbox" id="mcp-toggle" data-role="mcp-toggle" class="accent-accent h-3.5 w-3.5">
+                MCP
+              </label>
+              <select
+                id="model-select"
+                data-role="model-select"
+                title="Model"
+                class="bg-transparent border border-white/10 rounded-lg pl-1.5 pr-1 py-1.5 text-slate-400 text-xs hover:bg-white/5 hover:text-slate-200 transition focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                <option value="us.anthropic.claude-sonnet-4-6">Sonnet 4.6</option>
+                <option value="us.anthropic.claude-haiku-4-5-20251001-v1:0">Haiku 4.5</option>
+              </select>
+              <label
+                class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 cursor-pointer transition"
+                title="Show Claude's extended thinking"
+              >
+                <input type="checkbox" id="thinking-toggle" data-role="thinking-toggle" class="accent-accent h-3.5 w-3.5">
+                Think
+              </label>
+            </div>
+
+            <button
+              type="submit"
+              class="order-2 sm:order-3 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition shrink-0"
+            >Send</button>
+          </form>
+        </div>
+      </div>
+
+      <aside id="mcp-panel" data-role="mcp-panel" class="hidden lg:sticky lg:top-8 rounded-2xl border border-white/5 bg-surface-card shadow-card p-4 text-sm space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-100">MCP metrics</h2>
+          <span id="mcp-status" data-role="mcp-status" class="text-xs text-slate-500">disconnected</span>
+        </div>
+
+        <!-- Shown until a real handshake succeeds — nothing below this
+             renders, and no query is made, until "Connect" is clicked
+             and the server accepts the token. Mirrors adding an MCP
+             server in Claude Desktop: connection is a deliberate action
+             with a visible result, not a side effect of a checkbox. -->
+        <div id="mcp-connect-form" data-role="mcp-connect-form" class="space-y-2">
+          <p class="text-xs text-slate-500">
+            Enter the auth token printed in the <code class="text-slate-400">mcp_server.server</code>
+            console output, then connect.
+          </p>
+          <input
+            id="mcp-token-input"
+            data-role="mcp-token-input"
+            type="password"
+            placeholder="Server auth token"
+            autocomplete="off"
+            class="w-full bg-surface-raised border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-accent/50"
+          >
+          <button
+            id="mcp-connect-btn"
+            data-role="mcp-connect-btn"
+            type="button"
+            class="w-full rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 transition"
+          >Connect</button>
+        </div>
+
+        <div id="mcp-data" data-role="mcp-data" class="hidden space-y-4">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wide">Context Window Explorer</h3>
+              <span id="ctx-total" data-role="ctx-total" class="text-[11px] font-mono text-slate-500"></span>
+            </div>
+            <div id="mcp-current-session" data-role="mcp-current-session" class="space-y-2 text-xs text-slate-400">
+              No session yet — send a message.
+            </div>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Recent sessions</h3>
+            <div id="mcp-sessions" data-role="mcp-sessions" class="space-y-1 text-xs text-slate-400"></div>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Tool usage</h3>
+            <div id="mcp-tool-metrics" data-role="mcp-tool-metrics" class="space-y-1 text-xs text-slate-400"></div>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Cost & throughput</h3>
+            <div id="mcp-aggregate" data-role="mcp-aggregate" class="space-y-1 text-xs text-slate-400"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/mcp-client.js"></script>
+  <script src="/chat.js"></script>
+</body>
+</html>

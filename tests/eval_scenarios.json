@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "question": "Why is payments-api degraded?",
+    "expected_tools": ["get_service_metrics", "get_recent_deployments", "search_logs"],
+    "expected_facts": ["v1.8.3", "connection pool"]
+  },
+  {
+    "id": 2,
+    "question": "Which service has the highest error rate?",
+    "expected_tools": ["list_services", "get_service_metrics"],
+    "expected_facts": ["payments-api", "8.4"]
+  },
+  {
+    "id": 3,
+    "question": "What changed immediately before payments-api degraded?",
+    "expected_tools": ["get_recent_deployments"],
+    "expected_facts": ["v1.8.3"]
+  },
+  {
+    "id": 4,
+    "question": "Which service is cheapest to operate?",
+    "expected_tools": ["list_services", "get_cost_breakdown"],
+    "expected_facts": ["notifications"]
+  },
+  {
+    "id": 5,
+    "question": "Investigate checkout-api and tell me whether there is evidence of a recent deployment causing the issue.",
+    "expected_tools": ["get_recent_deployments", "search_logs"],
+    "expected_facts": ["inventory-service"]
+  },
+  {
+    "id": 6,
+    "question": "Is auth-api healthy?",
+    "expected_tools": ["get_service_metrics"],
+    "expected_facts": ["healthy"]
+  },
+  {
+    "id": 7,
+    "question": "What is checkout-api's monthly operating cost?",
+    "expected_tools": ["get_cost_breakdown"],
+    "expected_facts": ["310"]
+  },
+  {
+    "id": 8,
+    "question": "Compare the cheapest and most expensive services to operate and tell me the difference in monthly cost.",
+    "expected_tools": ["list_services", "get_cost_breakdown"],
+    "expected_facts": ["notifications", "payments-api", "380"]
+  }
+]

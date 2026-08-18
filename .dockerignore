@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+learn/
+mcp_server/
+tests/
+terraform/
+evidence/
+data/metrics.db

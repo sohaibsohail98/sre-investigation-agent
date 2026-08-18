@@ -1,0 +1,6 @@
+[
+  {"service": "payments-api",  "status": "degraded", "error_rate": 8.4, "latency_p95_ms": 1840, "cpu": 71},
+  {"service": "checkout-api",  "status": "degraded", "error_rate": 6.1, "latency_p95_ms": 1200, "cpu": 65},
+  {"service": "auth-api",      "status": "healthy",  "error_rate": 0.3, "latency_p95_ms": 180,  "cpu": 22},
+  {"service": "notifications", "status": "healthy",  "error_rate": 0.1, "latency_p95_ms": 95,   "cpu": 15}
+]
