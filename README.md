@@ -116,20 +116,14 @@ uv run python -m scripts.dev_server
 **Use this, not a bare `python -m mcp_server.server` / `python -m
 web.server`** — it runs the full unit suite and a live Bedrock
 connectivity check first, then starts both servers as separate
-processes, and refuses to start either if a check fails. This exists
-because of a real incident:
-a stray `AWS_BEARER_TOKEN_BEDROCK` env var (left over from testing a
-Bedrock console API key) silently overrode working IAM credentials —
-botocore does this automatically for any bedrock-runtime call the
-moment that var is set anywhere in the environment, regardless of what
-credentials were actually configured. The server started fine; every
-chat request then failed with `"Bearer Token has expired"`. `agent/
-runtime.py` now clears that env var defensively at import time (so this
-specific failure can't recur), and the preflight check
-(`tests/preflight_bedrock.py`) catches any *other* auth/connectivity
-problem before you're mid-conversation, not during it. If you ever hit
-this error again: `env | grep AWS_BEARER_TOKEN_BEDROCK` in the shell
-you're launching from.
+processes, and refuses to start either if a check fails.
+`agent/runtime.py` also clears `AWS_BEARER_TOKEN_BEDROCK` defensively
+at import time, since botocore silently prefers that env var over IAM
+credentials for any bedrock-runtime call if it's set anywhere in the
+environment, regardless of what credentials were actually configured —
+if you ever see `"Bearer Token has expired"` on a chat request despite
+working AWS credentials, check `env | grep AWS_BEARER_TOKEN_BEDROCK` in
+the shell you're launching from.
 
 Starts two servers: `mcp_server.server` on `http://127.0.0.1:8787`
 (protocol + metrics data access only) and `web.server` on
@@ -280,35 +274,12 @@ Two workflows:
   `main` (or manually via the Actions tab). Uses AWS OIDC — no stored
   AWS keys in repo secrets. `terraform/variables.tf`'s `github_repo`
   matches the real repo, `terraform/ci.tf`'s OIDC trust policy is
-  applied (including wildcarding the numeric owner/repo IDs GitHub's
-  actual token subject embeds — confirmed via CloudTrail, not just the
-  plain `owner/repo` name format older docs describe), and the
+  applied (wildcarding the numeric owner/repo IDs GitHub's token
+  subject embeds, not just the plain `owner/repo` name format), and the
   `AWS_GITHUB_ACTIONS_ROLE_ARN` repo secret is set. If you fork this
   repo, you'll need to redo those three steps for your own AWS account
   — get the role ARN via `terraform output github_actions_role_arn`
   after applying `ci.tf`.
-
-## Before you push this to GitHub — status of the account-ID decision
-
-This repo is public. The real AWS account ID (`901876312125`) has been
-scrubbed from this README's example commands (replaced with
-`<your-account-id>`) — that was the only place it was decorative prose.
-It's genuinely narrow: two other files still reference it, and neither
-is a scrub candidate —
-
-- `terraform/main.tf`'s S3 state-bucket name and `terraform/ci.tf`'s
-  matching IAM policy ARNs — the bucket already exists in AWS with that
-  literal name; this isn't decorative, Terraform needs the real value to
-  function. Renaming it means an actual state migration (create a new
-  bucket, migrate state, delete the old one), not a text edit — real
-  infrastructure surgery, not a pre-push formality, so it's left as-is.
-
-An account ID isn't a credential on its own — it can't be used to
-access anything — so this is a mild account-identifying/OSINT
-consideration, not a security hole. `docs/PROJECT.md`'s history
-separately documents that AWS **root** credentials were used locally for
-speed early on (an explicit, deliberate tradeoff at the time, not an
-oversight) — worth knowing that's in the history too.
 
 ## Known behavior worth knowing about
 
@@ -320,7 +291,7 @@ oversight) — worth knowing that's in the history too.
 - `search_logs` matches substrings — the prompt nudges the model to
   search efficiently rather than probe many single words one at a time;
   if you see `"Hit the turn limit without finishing"`, that's what's
-  going wrong, and `MAX_TURNS` (default 10, env var override) is the
+  going wrong, and `MAX_TURNS` (default 15, env var override) is the
   knob if it recurs after a prompt change.
 
 ## Not built

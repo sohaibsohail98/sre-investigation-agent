@@ -122,11 +122,11 @@ def test_on_event_receives_full_sequence(monkeypatch):
     pin the event sequence so streaming can't silently drift from what
     actually happened in the loop.
 
-    Regression coverage for a real bug: the final turn's text must be
-    emitted ONLY as "final", never also as "assistant_text" — the
-    latter previously duplicated the entire answer as raw unrendered
-    markdown in the chat UI's "reasoning" line, directly above the same
-    text properly rendered as the answer bubble."""
+    Pins the required contract: the final turn's text must be emitted
+    ONLY as "final", never also as "assistant_text" — emitting both
+    would duplicate the entire answer as raw unrendered markdown in the
+    chat UI's "reasoning" line, directly above the same text properly
+    rendered as the answer bubble."""
     events = []
     responses = [
         _tool_use_response("list_services", {}, text="Let me check."),

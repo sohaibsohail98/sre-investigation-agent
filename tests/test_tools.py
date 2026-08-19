@@ -1,10 +1,10 @@
 """Unit tests for tools/ — against a fake in-memory DynamoDB table (see
 conftest.py's autouse fake_infra_table fixture), no real AWS, no Bedrock
-calls. Covers the get_service_metrics/get_cost_breakdown fix: previously
-fell through to an implicit `return None` if a service passed
-valid_services() but had no matching item (a data-drift scenario), which
-would crash agent/runtime.py's loop outside its try/except
-(`None.get("status", ...)`).
+calls. Covers get_service_metrics/get_cost_breakdown's contract: a
+service that passes valid_services() but has no matching item (a
+data-drift scenario) must return an error dict, not fall through to an
+implicit `return None` — `None.get("status", ...)` would crash
+agent/runtime.py's loop outside its try/except.
 """
 
 from tools import _common, get_cost_breakdown, get_recent_deployments, get_service_metrics, list_services, search_logs

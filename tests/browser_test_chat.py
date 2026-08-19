@@ -105,9 +105,8 @@ def main():
             print("✅ User message rendered.")
 
             # The loading indicator must appear right after the user
-            # message — this is the "request sent" confirmation that was
-            # previously missing entirely (the original complaint: no
-            # feedback between sending and the first tool card).
+            # message — the "request sent" confirmation the user sees
+            # between sending a message and the first tool card appearing.
             page.wait_for_selector('[data-role="loading-indicator"]', timeout=2_000)
             print("✅ Loading indicator appeared immediately after sending.")
 
@@ -152,12 +151,10 @@ def main():
             print("✅ Loading indicator cleared once real content arrived.")
 
             # Toggle the MCP metrics panel on — this only reveals the
-            # connect form, it does not connect by itself (see
-            # docs/PROJECT.md's "MCP metrics panel" section for why that
-            # changed). Confirm that boundary, then actually connect —
-            # a real cross-process MCP Streamable-HTTP handshake against
-            # mcp_server.server, authenticated with the fixed test
-            # token, not a mock.
+            # connect form, it does not connect by itself. Confirm that
+            # boundary, then actually connect — a real cross-process MCP
+            # Streamable-HTTP handshake against mcp_server.server,
+            # authenticated with the fixed test token, not a mock.
             print("Toggling MCP server panel on...")
             page.locator('[data-role="mcp-toggle"]').check()
             page.wait_for_selector('[data-role="mcp-panel"]:not(.hidden)', timeout=2_000)

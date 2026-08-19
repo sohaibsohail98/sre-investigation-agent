@@ -2,15 +2,14 @@
 
 ## Test after every feature or fix, not just at the end
 
-This project's history includes real bugs that shipped and were only
-caught by a fresh-eyes review after the fact (unpaginated DynamoDB
-`Scan` silently truncating results, `get_service_metrics` crashing on
-data drift, deleting `data/metrics.db` breaking every dashboard read
-because only the write path initialized the schema, a stray
-`AWS_BEARER_TOKEN_BEDROCK` env var silently hijacking Bedrock auth and
-only surfacing when a user tried to chat). All of them were regressions
-a test would have caught immediately, not edge cases that needed a deep
-audit to find.
+This project has classes of bug that are easy to reintroduce silently:
+unpaginated DynamoDB `Scan` calls, tool functions returning `None` on
+data drift instead of an error dict, schema migrations that only run on
+the write path (so a fresh read-only DB crashes), and environment
+variables that can silently override AWS credentials
+(`AWS_BEARER_TOKEN_BEDROCK`). Each has a regression test — see
+`tests/test_tools.py`, `tests/test_runtime.py`,
+`tests/test_bearer_token_env.py`.
 
 **Rule: after implementing or changing any feature, run the test suite
 before considering the change done — not as a separate cleanup pass at
@@ -31,11 +30,11 @@ uv run python -m scripts.dev_server  # local server launch — runs pytest +
 ```
 
 If you add a feature or fix a bug that isn't covered by an existing
-test, add one in the same turn — see `tests/test_runtime.py`,
-`tests/test_tools.py`, `tests/test_metrics_store_sqlite.py`,
-`tests/test_metrics_store_dynamodb.py` for the existing patterns
-(monkeypatched fakes, no live AWS/Bedrock calls, `metrics/store_dynamodb.py`
-tested against a hand-rolled in-memory table stub, not moto). A bug fix
+test, add one in the same turn — see `tests/test_runtime.py` and
+`tests/test_tools.py` for the existing patterns (monkeypatched fakes,
+no live AWS/Bedrock calls). `mcp-context-inspector` (the dependency
+providing `metrics/`) follows the same pattern for its own DynamoDB
+backend — a hand-rolled in-memory table stub, not moto. A bug fix
 without a regression test is only half done.
 
 ## Where things live
@@ -49,7 +48,7 @@ without a regression test is only half done.
   `docs/PROJECT.md`'s boilerplate/config split section before adding a
   new tool or changing the loop mechanics.
 
-## Standing rules carried over from the build plan
+## Standing rules for this repo
 
 - Pause for confirmation before major architectural changes (new
   cloud dependency, new storage backend, new auth model) — don't just

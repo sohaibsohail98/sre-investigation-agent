@@ -1,14 +1,12 @@
 # --- GitHub Actions OIDC — no long-lived AWS keys in repo secrets --------
 #
-# Applied. var.github_repo must match the real owner/repo this gets
-# pushed to (placeholder default: sohaibsohail98/aws-bedrock-project) —
+# var.github_repo must match the real owner/repo this gets pushed to —
 # re-apply if that changes. The repo secret AWS_GITHUB_ACTIONS_ROLE_ARN
-# still needs setting manually (see README.md's CI section) before the
-# workflow actually runs.
+# (see README.md's CI section) must also be set for the workflow to run.
 #
-# The OIDC provider for token.actions.githubusercontent.com already exists
-# in this AWS account (from another project) — referenced via data source,
-# not recreated (an account can only have one per provider URL).
+# The OIDC provider for token.actions.githubusercontent.com is referenced
+# via data source, not recreated — an AWS account can only have one per
+# provider URL.
 
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
@@ -28,14 +26,12 @@ resource "aws_iam_role" "github_actions" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         # Scoped to main branch only — PRs/other branches can't deploy.
-        # GitHub's actual OIDC `sub` claim (confirmed via CloudTrail after
-        # this policy first rejected every request with "Not authorized"
-        # despite the owner/repo names matching exactly) is NOT the plain
-        # "repo:owner/repo:ref:..." format the old docs describe — it now
-        # embeds immutable numeric owner/repo IDs, e.g.
-        # "repo:sohaibsohail98@67048112/sre-investigation-agent@1338702610:ref:refs/heads/main".
-        # Wildcard the ID segments rather than hardcoding them (fragile —
-        # unclear whether they're stable across e.g. a repo transfer).
+        # GitHub's OIDC `sub` claim embeds immutable numeric owner/repo
+        # IDs alongside the names, e.g.
+        # "repo:sohaibsohail98@67048112/sre-investigation-agent@1338702610:ref:refs/heads/main" —
+        # not the plain "repo:owner/repo:ref:..." format. Wildcard the ID
+        # segments rather than hardcoding them (fragile — unclear whether
+        # they're stable across e.g. a repo transfer).
         StringLike = {
           "token.actions.githubusercontent.com:sub" = "repo:${split("/", var.github_repo)[0]}@*/${split("/", var.github_repo)[1]}@*:ref:refs/heads/main"
         }
@@ -129,18 +125,14 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = aws_dynamodb_table.metrics.arn
       },
       {
-        # The actual root cause of every eval scenario failing in CI
-        # ("missing facts in answer" across the board, no exception —
-        # tools/_common.py's DynamoDB calls were silently AccessDenied,
-        # so every tool returned an error and the model had nothing to
-        # ground an answer in). This role never had ANY read permission
-        # on the infra table the SRE tools actually query — only
-        # table-management actions on the metrics table above. Mirrors
-        # the runtime role's identical read-only grant in main.tf. Also
-        # needs the same Describe*/List* set as the metrics table above
-        # since this table is in Terraform state too (Terraform reads
-        # every managed resource on refresh, not just ones this policy
-        # was originally written for).
+        # Read access to the infra table the SRE tools query — without
+        # this, every tool call in CI returns AccessDenied silently
+        # (tool errors are handled gracefully by design, so this looks
+        # like a model-quality problem, not a permissions one, if it
+        # regresses). Mirrors the runtime role's identical read-only
+        # grant in main.tf. Also needs the same Describe*/List* set as
+        # the metrics table above since this table is in Terraform
+        # state too.
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem",
@@ -162,31 +154,27 @@ resource "aws_iam_role_policy" "github_actions" {
       {
         # The full (untargeted) `terraform apply` re-evaluates this
         # file's own `data "aws_iam_openid_connect_provider"` block (the
-        # OIDC provider this very role's trust policy is built from),
-        # which needs account-wide List — ListOpenIDConnectProviders has
-        # no resource-level ARN scoping (confirmed by the AccessDenied
-        # error itself naming Resource "oidc-provider/*", not a specific
-        # provider ARN).
+        # OIDC provider this role's trust policy is built from), which
+        # needs account-wide List — ListOpenIDConnectProviders has no
+        # resource-level ARN scoping.
         Effect   = "Allow"
         Action   = ["iam:ListOpenIDConnectProviders"]
         Resource = "*"
       },
       {
         # The List action above only enumerates providers; the data
-        # source then Gets the specific one by ARN — a second, separate
-        # AccessDenied on the very next API call.
+        # source then Gets the specific one by ARN, which needs its own
+        # grant.
         Effect   = "Allow"
         Action   = ["iam:GetOpenIDConnectProvider"]
         Resource = "arn:aws:iam::${local.account_id}:oidc-provider/token.actions.githubusercontent.com"
       },
       {
-        # Self-referential: this role/policy are themselves managed by
-        # Terraform, so the untargeted `terraform apply` refreshes them
-        # too, needing the same read/describe access already granted
-        # for aws_iam_role.runtime.arn above but never for THIS role's
-        # own ARN. Same reasoning throughout this file — every resource
-        # actually in state needs Terraform's standard refresh-time
-        # read set, not just create/update/delete.
+        # Self-referential: this role/policy are themselves
+        # Terraform-managed, so the untargeted `terraform apply`
+        # refreshes them too and needs the same read/describe set
+        # granted to aws_iam_role.runtime.arn above, applied to this
+        # role's own ARN.
         Effect = "Allow"
         Action = [
           "iam:GetRole",

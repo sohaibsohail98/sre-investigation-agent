@@ -5,16 +5,13 @@ route checked here either serves a static file, reads metrics/store.py
 (SQLite, isolated via a temp DB), or is a pure routing decision (the "/"
 redirect).
 
-This exists because of a real gap the automated pipeline had: pytest
-tests Python functions in isolation and never makes an HTTP request;
-tests/preflight_bedrock.py checks AWS credentials, not the local web
-server's routes; tests/browser_test_chat.py does exercise real routes in
-a real browser, but costs a live Bedrock call and isn't run
-automatically by scripts/dev_server.py. A route rename (the /chat move
-from :8787 to :8788 during the web/ split) or a route being dropped
-entirely could ship with a fully green `pytest` run and nobody would
-know until a human hit the URL. This test is the offline layer that
-would have caught that class of bug.
+The rest of the pytest suite tests Python functions in isolation and
+never makes an HTTP request; tests/preflight_bedrock.py checks AWS
+credentials, not route existence; tests/browser_test_chat.py exercises
+real routes in a real browser but costs a live Bedrock call and isn't
+run on every push. This file is the free, offline layer that catches a
+route rename or removal even though the functions behind it are
+individually correct.
 """
 
 import subprocess
@@ -115,25 +112,21 @@ def test_web_server_routes(running_servers, path, expected):
     ],
 )
 def test_mcp_server_rest_routes(running_servers, path, expected):
-    """REST routes now require the same bearer token as /mcp (see
-    mcp-context-inspector's MultiTokenAuthMiddleware) — they used to be
-    open, which stopped being safe once this server is meant to be
-    handed out to other people, not just used solo."""
+    """REST routes require the same bearer token as /mcp (see
+    mcp-context-inspector's MultiTokenAuthMiddleware), since this server
+    is meant to be handed out to other people, not just used solo."""
     headers = {"Authorization": f"Bearer {TEST_MCP_AUTH_TOKEN}"}
     assert _status(f"http://127.0.0.1:{MCP_PORT}{path}", headers=headers) == expected
 
 
 @pytest.mark.parametrize("path", ["/api/sessions", "/api/tool-metrics", "/api/cost"])
 def test_mcp_server_rest_routes_require_auth(running_servers, path):
-    """Pins the actual regression this exists to catch: these routes
-    must reject an unauthenticated request, not silently stay open."""
+    """These routes must reject an unauthenticated request, not stay open."""
     assert _status(f"http://127.0.0.1:{MCP_PORT}{path}") == 401
 
 
 def test_old_pre_restructure_chat_url_is_gone(running_servers):
-    """Pins the exact regression that prompted this test file: /chat used
-    to live on mcp_server's port before the web/ split. If it ever comes
-    back (e.g. a bad merge resurrects the old route), catch it — a
-    visitor hitting the old bookmarked URL should 404, not silently serve
-    stale content from two different apps."""
+    """/chat lived on mcp_server's port before the web/ split — a
+    visitor hitting the old bookmarked URL should 404, not silently
+    serve stale content from a different app."""
     assert _status(f"http://127.0.0.1:{MCP_PORT}/chat") == 404

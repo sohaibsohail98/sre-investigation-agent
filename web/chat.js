@@ -87,16 +87,14 @@ function addUserMessage(content, text) {
 }
 
 // A persistent, updating status line — not just an initial "request
-// sent" confirmation. It used to be bouncing dots that disappeared the
-// moment the FIRST event arrived, which meant every gap after that (the
-// wait for the next tool call, the final round-trip to compose the
-// answer) had no feedback at all — indistinguishable from "stuck." This
-// stays visible and its text updates through the whole request, then is
+// sent" confirmation. Every gap in the investigation (waiting for the
+// next tool call, the final round-trip to compose the answer) needs
+// visible feedback, or it's indistinguishable from "stuck." This stays
+// visible and its text updates through the whole request, then is
 // explicitly removed on "final"/"error" — never left lingering.
-// data-role stays "loading-indicator" (not renamed) so the existing
-// browser_test_chat.py assertions ("appears right after the user
-// message," "gone once the final answer renders") keep meaning the same
-// thing without needing to change.
+// data-role is "loading-indicator", matched by browser_test_chat.py's
+// assertions ("appears right after the user message," "gone once the
+// final answer renders").
 function addStatusIndicator(content) {
   const div = document.createElement("div");
   div.className = "flex items-center gap-2 py-1 text-xs text-slate-500";
@@ -129,9 +127,8 @@ function addStatusIndicator(content) {
 }
 
 // Reasoning renders full-weight, same size as the final answer — not
-// muted/italic (that made it unreadable and was the direct cause of
-// "I can't see the model's reasoning"). A left accent bar signals
-// "this is process," not shrunk text.
+// muted/italic, which reads as unreadable filler text. A left accent
+// bar signals "this is process," not shrunk text.
 function addReasoning(content, text) {
   const div = document.createElement("div");
   div.className = "border-l-2 border-accent/50 pl-3 py-0.5 text-[15px] leading-relaxed text-slate-300";
@@ -399,11 +396,9 @@ async function loadSuggestions() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     questions = await res.json();
   } catch (err) {
-    // Previously this threw unhandled and left "Loading suggested
-    // questions…" on screen forever with no indication anything had
-    // gone wrong — the suggestions row is a nice-to-have, not core
-    // functionality, so degrade to hiding it rather than a stuck
-    // loading message.
+    // The suggestions row is a nice-to-have, not core functionality —
+    // degrade to hiding it entirely rather than leaving a stuck
+    // "Loading suggested questions…" message on a failed fetch.
     suggestionsEl.remove();
     return;
   }

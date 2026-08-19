@@ -62,13 +62,12 @@ class McpClient {
       const { value, done } = await reader.read();
       if (done) break;
       // The server's SSE frames are CRLF-terminated ("\r\n\r\n" between
-      // frames) — confirmed by direct inspection of the raw stream bytes.
-      // Splitting on a bare "\n\n" never matches "\r\n\r\n" (there's a \r
-      // between the two \n's), so every frame silently fell into the
-      // "incomplete, wait for more" leftover buffer forever and
-      // lastMessage never got set — the actual cause of initialize()
-      // crashing on a null response. Normalize line endings before
-      // splitting so this works regardless of which the server uses.
+      // frames). Splitting on a bare "\n\n" never matches "\r\n\r\n"
+      // (there's a \r between the two \n's), so every frame would
+      // silently fall into the "incomplete, wait for more" leftover
+      // buffer forever and lastMessage would never get set. Normalize
+      // line endings before splitting so this works regardless of
+      // which the server uses.
       buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
       const frames = buffer.split("\n\n");
       buffer = frames.pop();
@@ -142,9 +141,9 @@ class McpClient {
 
     // Everything else (dict- or list-returning tools) has no
     // structuredContent — each item of a *list* return comes back as
-    // its OWN content block (confirmed by direct inspection: a 3-item
-    // get_recent_sessions reply is 3 separate {type:"text"} blocks, not
-    // one block holding a JSON array). So this always returns an array
+    // its OWN content block (a 3-item get_recent_sessions reply is 3
+    // separate {type:"text"} blocks, not one block holding a JSON
+    // array). So this always returns an array
     // of parsed blocks; the caller — who already knows whether the tool
     // returns a single object or a list — unwraps with `[0]` for the
     // former. Returning "the bare object when there's exactly one

@@ -1,25 +1,18 @@
 # Project — SRE Investigation Agent (AgentCore + MCP Observability)
 
-Consolidated from three separate docs (`HANDOFF.md`, `ClaudeFurther.md`,
-`NEXT_ARCHITECTURE.md`) that accumulated overlap, drift, and
-superseded-but-not-deleted content over several build sessions. This is
-the one doc going forward — see `README.md` for "how do I run it,"
-`CLAUDE.md` for working conventions, this file for the design reasoning
-and history behind them.
+See `README.md` for "how do I run it," `CLAUDE.md` for working
+conventions, this file for the design reasoning and history behind them.
 
 ## What this is
 
-A portfolio project: an AI agent that investigates incidents in a
-mocked-up infrastructure environment (4 services, deterministic metrics/
-logs/deployments/cost data), deployed on **Amazon Bedrock AgentCore
-Runtime**, with its own **MCP server** exposing per-investigation cost/
-token/tool-call metrics, and a live-streaming chat UI that can open a
-real MCP handshake to show those metrics in an embedded panel.
-The goal is demonstrating the platform layer around agents — observability,
-evaluation, tool-calling, deployment — not just "call an LLM with tools."
-
-Owner: Sohaib Sohail, job-seeking. Feeds a broader portfolio plan
-(referenced projects A01/A04) outside this repo.
+An AI agent that investigates incidents in a mocked-up infrastructure
+environment (4 services, deterministic metrics/logs/deployments/cost
+data), deployed on **Amazon Bedrock AgentCore Runtime**, with its own
+**MCP server** exposing per-investigation cost/token/tool-call metrics,
+and a live-streaming chat UI that can open a real MCP handshake to show
+those metrics in an embedded panel. The goal is demonstrating the
+platform layer around agents — observability, evaluation, tool-calling,
+deployment — not just "call an LLM with tools."
 
 ## Current state
 
@@ -163,11 +156,11 @@ is the trigger to switch backends, not an optional upgrade. Both
 backends implement the same function signatures behind
 `metrics/store.py`'s dispatcher (chosen via `STORAGE_BACKEND` env var,
 set automatically by Terraform on the deployed runtime) — callers never
-know which is active. A fresh-eyes review caught two real bugs in the
-DynamoDB backend (an unpaginated `Scan` that silently truncates once a
-table grows past one page, and a shape mismatch where it leaked an
-internal partition-key field the SQLite backend didn't have); both are
-fixed and pinned by `tests/test_metrics_store_dynamodb.py`.
+know which is active. The DynamoDB backend paginates `Scan` calls (a
+single call silently truncates once a table grows past one page) and
+strips its internal partition-key field so its shape matches the
+SQLite backend exactly — both pinned by
+`tests/test_metrics_store_dynamodb.py`.
 
 No mounted volume (EFS/S3 access point) was ever added for chat
 history — DynamoDB already serves that purpose, and running two storage
@@ -181,11 +174,11 @@ package — see "Repo layout" above) is strictly the MCP protocol server +
 metrics data access — it does not import `agent/` at all, and hosts no
 chat/UI code. It was originally planned as `mcp/`, but a directory with
 that name at the repo root shadows the installed `mcp` PyPI package the
-moment anything inside it does `from mcp.server import ...` — caught by
-actually running it, not by reading the plan. Exposes 7 read-only MCP
-tools (`get_session_metrics`, `get_token_breakdown`, `get_tool_metrics`,
-`get_agent_trace`, `get_cost_estimate`, `get_recent_sessions`,
-`get_context_timeline`) plus matching REST routes (a curl-friendly
+moment anything inside it does `from mcp.server import ...`. Exposes 8
+MCP tools — 7 read-only (`get_session_metrics`, `get_token_breakdown`,
+`get_tool_metrics`, `get_agent_trace`, `get_cost_estimate`,
+`get_recent_sessions`, `get_context_timeline`) plus `record_session`
+(write, authenticated) — plus matching REST routes (a curl-friendly
 debugging alternative to a full MCP handshake) — both paths call the
 same underlying `metrics/store.py` functions, so there's one
 data-access layer, not two. Runs with `CORSMiddleware` attached (via
@@ -213,20 +206,16 @@ panel below, not kept alongside it.
 
 The chat UI has an "MCP server" toggle (off by default) instead of the
 old separate `/dashboard` page. The toggle only reveals a connect
-form — it deliberately does not auto-connect. The first version did
-(checking the box immediately ran the handshake), which caused a real
-point of confusion: the panel's data (`get_recent_sessions` et al.) is
-global history from `data/metrics.db`, not scoped to "since you
-connected," so a user could toggle MCP on *after* an investigation
-finished and see it already there, looking like the agent had somehow
-used MCP retroactively. It hadn't — the chat always calls
+form — it deliberately does not auto-connect, since the panel's data
+(`get_recent_sessions` et al.) is global history from `data/metrics.db`,
+not scoped to "since you connected." The chat always calls
 `agent/app.py` directly, MCP toggle on or off; MCP here is read-only
 observability into what already happened, never how the agent
 investigates. Making "Connect" an explicit, separate action (paste a
 token, click Connect, watch it report "connected" before anything
-renders) makes that boundary visible instead of implicit, and matches
-how adding an MCP server actually feels in Claude Desktop — a
-deliberate action with a visible result, not a checkbox side effect.
+renders) keeps that boundary visible, matching how adding an MCP server
+feels in Claude Desktop — a deliberate action with a visible result,
+not a checkbox side effect.
 
 The handshake itself: `web/mcp-client.js` — vanilla JS, no SDK —
 performs a genuine MCP Streamable-HTTP JSON-RPC handshake (`initialize`
@@ -248,22 +237,21 @@ server-side, mints/reuses a token per Google account). Still explicitly
 **not** the MCP SDK's own OAuth Resource Server support
 (`MCPServer(auth=...)`), which requires a real `issuer_url` — a full
 OAuth/OIDC authorization server (Cognito, Auth0, self-hosted) — and
-still not a hand-rolled OAuth 2.1 authorization server either (the
-heavier pattern investigated via a comparable project's implementation);
-Google Identity Services' one-tap credential flow gets "each person
-authenticates as themselves, revocably" without either. **Per-owner data
-isolation**, added right after: every session is tagged with whoever
-recorded it (a Google `sub`, or `None` for the server owner), and every
-read filters to the caller's own data unless they're the owner token —
-verified against a real MCP `tools/call` dispatch, not just the REST
-layer, since the isolation is implemented via a contextvar
-(`current_owner`) set in the auth middleware, and Starlette's context
-propagation through `BaseHTTPMiddleware` into tool dispatch was the one
-part of this that genuinely needed empirical proof rather than trusting
-the docs. `record_session` is also now an authenticated MCP tool (not
-just a direct Python import), so a friend's own remote agent can push
-its own sessions in, attributed to them. Full details:
-`mcp-context-inspector`'s own README, "Auth" section.
+still not a hand-rolled OAuth 2.1 authorization server (PKCE, dynamic
+client registration, a consent screen — real infrastructure
+disproportionate to a personal-scale server); Google Identity Services'
+one-tap credential flow gets "each person authenticates as themselves,
+revocably" without either. **Per-owner data isolation** on top of that:
+every session is tagged with whoever recorded it (a Google `sub`, or
+`None` for the server owner), and every read filters to the caller's
+own data unless they're the owner token — implemented via a contextvar
+(`current_owner`) set in the auth middleware and propagated through
+Starlette's `BaseHTTPMiddleware` into MCP tool dispatch, verified
+against a real MCP `tools/call` dispatch, not just the REST layer.
+`record_session` is also now an authenticated MCP tool (not just a
+direct Python import), so a friend's own remote agent can push its own
+sessions in, attributed to them. Full details: `mcp-context-inspector`'s
+own README, "Auth" section.
 
 Once connected, the panel calls the same 7 MCP tools directly
 (`get_recent_sessions`, `get_tool_metrics`, `get_cost_estimate`,
@@ -272,20 +260,18 @@ Once connected, the panel calls the same 7 MCP tools directly
 real protocol calls end to end, not a REST fallback, since that's more
 honest to "do a handshake" than a shortcut would be. The REST routes in
 `mcp_server/server.py` are kept anyway as a documented curl-debugging
-alternative (deliberately left unauthenticated, matching this project's
-existing "no auth, local single-user" stance for those); they cost
-nothing to leave. Toggling off calls the client's `close()`, an
+alternative — authenticated the same way as `/mcp` (see the Auth
+section above). Toggling off calls the client's `close()`, an
 explicit `DELETE` with the session header — best-effort, since a user
 closing the tab without toggling off first shouldn't be treated as an
 error anywhere.
 
 ### Context Window Explorer — the MCP server's actual USP
 
-The MCP server's original pitch ("per-investigation cost/token/tool-call
-metrics over a real MCP handshake") turned out to be a re-read of data
-the chat UI already showed inline — not a unique capability. What *is*
-unique: full transparency into exactly what enters the model's context
-window, block by block, with honest token estimates — inspired by
+What's unique about this server, versus just re-reading data the chat
+UI already shows inline: full transparency into exactly what enters
+the model's context window, block by block, with honest token
+estimates — inspired by
 [`code.claude.com/docs/en/context-window`](https://code.claude.com/docs/en/context-window)'s
 interactive timeline (categorized, colored, hoverable blocks; a running
 token total). Explicitly not copied: its play/scrub transport control —
@@ -311,13 +297,11 @@ sort-key prefix (DynamoDB) — same shape, same dispatcher pattern as
 rows and computes `cumulative_tokens`/`cumulative_pct` in Python before
 returning, against `common.config.CONTEXT_WINDOW_TOKENS` (200_000,
 confirmed against Sonnet 4.6/Haiku 4.5's current model cards) — a single
-source of truth that replaced a hardcoded `200_000` previously
-duplicated in `web/chat.js`. A `tool_result` block also carries the
-tool's `status` ("ok"/"error") so a failed call's block can be colored
-distinctly in the UI — this status wasn't on the block originally (it
-lived only in `trace`), so `_add_block` grew an optional `status`
-kwarg rather than requiring a client-side join against
-`get_agent_trace` by turn/sequence.
+source of truth for context-window math shared with `web/chat.js`. A
+`tool_result` block also carries the tool's `status` ("ok"/"error") so
+a failed call's block can be colored distinctly in the UI, via an
+optional `status` kwarg on `_add_block` — avoids needing a client-side
+join against `get_agent_trace` by turn/sequence.
 
 The UI (`web/chat.js`'s `renderContextTimeline()`, replacing the old
 flat "Current session" list) is a proportional segmented bar (one slice
@@ -340,26 +324,23 @@ complete and honest without it.
 
 ### Chat streaming — live tool-call visibility, not a spinner
 
-The first version of the chat UI showed a single "Investigating…"
-spinner until the whole multi-turn tool-calling loop finished — no
-visibility into what the agent was actually doing, and multi-tool
-questions can genuinely take several seconds (each tool call is a real
-Bedrock round-trip; a question needing 3–4 tools means 3–4 real
-sequential model calls, not simulated delay). Fixed by adding an
-`on_event` callback to `agent/runtime.py`'s loop (fires on every turn
-start, any reasoning text, every tool call, every tool result, and the
-final answer), a Server-Sent Events endpoint (`/api/chat` in
-`web/server.py`, bridging the blocking Bedrock calls to the async
-web server via a background thread + queue), and `chat.js` rendering
-each event live as it streams in. The `/api/chat` handler also polls
-`request.is_disconnected()` (instead of a plain blocking queue read) and
-sets a `cancelled` `threading.Event()` on disconnect — without this, a
-user closing the tab mid-investigation left the worker thread running a
-real, billed Bedrock investigation to completion for nobody. `chat.html`
-also gained an intro section explaining what the agent is investigating
-and why multi-step
-questions take a few seconds — the "it's slow" complaint was really
-"there's no visibility into why," and streaming answers both.
+Multi-tool questions can genuinely take several seconds (each tool call
+is a real Bedrock round-trip; a question needing 3–4 tools means 3–4
+real sequential model calls, not simulated delay), so the chat UI
+streams live tool-call visibility rather than showing a single
+"Investigating…" spinner for the whole loop. An `on_event` callback on
+`agent/runtime.py`'s loop (fires on every turn start, any reasoning
+text, every tool call, every tool result, and the final answer) feeds a
+Server-Sent Events endpoint (`/api/chat` in `web/server.py`, bridging
+the blocking Bedrock calls to the async web server via a background
+thread + queue), which `chat.js` renders live as events stream in. The
+`/api/chat` handler polls `request.is_disconnected()` (instead of a
+plain blocking queue read) and sets a `cancelled` `threading.Event()` on
+disconnect, so a user closing the tab mid-investigation doesn't leave
+the worker thread running a real, billed Bedrock investigation to
+completion for nobody. `chat.html` also has an intro section explaining
+what the agent is investigating and why multi-step questions take a
+few seconds.
 
 ### Terraform state — S3 + DynamoDB backend
 
@@ -369,10 +350,8 @@ an S3 bucket (versioned, encrypted, public access blocked) with a
 DynamoDB lock table, so a new machine just needs `terraform init` and
 the right AWS credentials to pick up existing state, with locking
 against concurrent applies. The AgentCore runtime resource itself is
-Terraform-managed too — it required bumping the AWS provider from
-`~> 5.0` to `>= 6.21` (`aws_bedrockagentcore_agent_runtime` didn't exist
-in the 5.x line), confirmed with a clean plan showing zero changes to
-pre-existing resources.
+Terraform-managed too — the AWS provider is pinned to `>= 6.21`, since
+`aws_bedrockagentcore_agent_runtime` doesn't exist in the `5.x` line.
 
 ### GitHub Actions CI — OIDC, no stored keys
 
@@ -383,50 +362,29 @@ long-lived AWS key in repo secrets. Wired up and running — see
 `README.md`'s CI section for the one-time setup steps a fork would need
 to redo.
 
-Getting it fully working took more than the original "three setup
-steps" plan accounted for, all found by actually running it rather than
-inferring from AWS docs:
+Notable parts of the current setup:
 
-1. **The OIDC trust policy's `sub` condition needed the plain
-   `repo:owner/repo:ref:refs/heads/BRANCH` format** — this rejected
-   every request with "Not authorized to perform
-   sts:AssumeRoleWithWebIdentity" even with the correct owner/repo
-   names. CloudTrail showed the actual presented claim embeds immutable
-   numeric owner/repo IDs (`repo:owner@123/repo@456:ref:...`) — GitHub
-   changed this at some point after the original trust policy was
-   written. Fixed by wildcarding the ID segments.
-2. **The CI role had zero read access to the `sre-agent-infra` DynamoDB
-   table** — only table-management permissions on the metrics table.
-   Every SRE tool call in CI silently got `AccessDenied`, so the eval
-   suite failed 7-8/8 with "missing facts in answer" and no exception
-   (tool errors are handled gracefully by design, so this looked like a
-   model-quality problem, not a permissions one, until traced).
-3. **Terraform's refresh phase needs broader read/describe/list
-   permissions than create/update/delete** for every resource already
-   in state — `ecr:ListTagsForResource`,
-   `dynamodb:DescribeContinuousBackups`/`DescribeTimeToLive`/`ListTagsOfResource`,
-   `iam:ListRolePolicies`/`ListAttachedRolePolicies`/`ListInstanceProfilesForRole`.
-   Found one AccessDenied at a time by actually running `terraform
-   apply` from CI, not by reading the AWS provider's docs in advance.
-4. **`agent/Dockerfile` had two bugs, both invisible until the image
-   actually built for real for the first time**: `COPY metrics/
-   ./metrics/` copied a directory that no longer exists locally (moved
-   to `mcp-context-inspector` in the repo split, installed via pip
-   instead), and `common/` — imported directly by both `agent/app.py`
-   and `agent/runtime.py` — was never copied into the image at all, a
-   gap that predates the repo split entirely. Also needed `git`
-   installed in the base image, since `agent/requirements.txt` now has
-   a `git+https://...` pin the base `python:3.13-slim` image can't
-   `pip install` without it.
-
-This is the actual shape of "wiring up CI for the first time" —
-mostly IAM/infra gaps that only a real run surfaces, not something a
-docs review would have caught in advance.
+- **The OIDC trust policy's `sub` condition wildcards GitHub's numeric
+  owner/repo ID segments** (`repo:owner@*/repo@*:ref:refs/heads/main`
+  in `terraform/ci.tf`) rather than matching the plain
+  `repo:owner/repo:ref:...` name format, since GitHub's actual token
+  subject embeds immutable numeric IDs alongside the names.
+- **The CI role has explicit read access to the `sre-agent-infra`
+  DynamoDB table** the SRE tools query, plus the read/describe/list
+  permissions Terraform's refresh phase needs for every resource
+  already in state (ECR tags, DynamoDB backups/TTL/tags, IAM role
+  policies for both the runtime role and the CI role's own
+  self-referential ARN, the OIDC provider data source).
+- **`agent/Dockerfile`** installs `git` (needed for
+  `agent/requirements.txt`'s `mcp-context-inspector` git dependency)
+  and copies `common/` into the image (imported directly by both
+  `agent/app.py` and `agent/runtime.py`); it no longer copies
+  `metrics/`, which now ships as part of the `mcp-context-inspector`
+  package instead of a local directory.
 
 ## AWS/Bedrock gotchas — read before touching model config
 
-Two traps that cost real time during the original deploy, easy to
-rediscover if this doc isn't read first:
+Two non-obvious constraints when configuring the model ID:
 
 1. **The `us.` inference-profile prefix is mandatory.** `converse()` /
    `converse_stream()` reject the bare model ID
@@ -467,25 +425,21 @@ longer necessary — leave it deployed if useful).
 
 ## Testing
 
-`pytest` (44 tests, `tests/test_*.py`, no live calls) covers the actual
-bugs found during development: empty/fresh-DB reads not crashing,
-DynamoDB pagination, the DynamoDB/SQLite shape-parity contract, tool
-functions never returning `None` on data drift, the runtime loop's
-event-emission sequence, a stray `AWS_BEARER_TOKEN_BEDROCK` env var no
-longer being able to silently hijack Bedrock auth, a pre-caching
-`data/metrics.db` missing the new cache-token columns (`CREATE TABLE IF
-NOT EXISTS` never alters an existing table), and — via
-`tests/test_http_routes.py`, which boots both real servers as
-subprocesses and hits every non-Bedrock-calling route — routes actually
-existing at the URLs the frontend/docs claim, not just the Python
-functions behind them being individually correct. That last one is a
-real gap the pipeline had until it bit a real user: pytest never used to
-make an HTTP request, and the live-cost browser test that does isn't run
-automatically (see "Local dev launch" below). `tests/run_eval.py` is a separate, deliberately
-live-cost eval harness (8 scenarios, real Bedrock calls) — run it before
-committing a prompt or tool change, not on every trivial edit. See
-`CLAUDE.md` for the standing rule: test after implementing a feature or
-fixing a bug, not as an end-of-session cleanup pass.
+`pytest` (37 tests, `tests/test_*.py`, no live calls) covers: empty/fresh-DB
+reads not crashing, DynamoDB pagination, the DynamoDB/SQLite
+shape-parity contract, tool functions never returning `None` on data
+drift, the runtime loop's event-emission sequence, `AWS_BEARER_TOKEN_BEDROCK`
+never being able to silently hijack Bedrock auth, a pre-caching
+`data/metrics.db` migrating cleanly (`CREATE TABLE IF NOT EXISTS` never
+alters an existing table), and — via `tests/test_http_routes.py`, which
+boots both real servers as subprocesses and hits every non-Bedrock-calling
+route — routes actually existing at the URLs the frontend/docs claim, not
+just the Python functions behind them being individually correct.
+`tests/run_eval.py` is a separate, deliberately live-cost eval harness (8
+scenarios, real Bedrock calls) — run it before committing a prompt or
+tool change, not on every trivial edit. See `CLAUDE.md` for the standing
+rule: test after implementing a feature or fixing a bug, not as an
+end-of-session cleanup pass.
 
 ### Local dev launch — tests run automatically first
 
@@ -495,85 +449,43 @@ suite, then a live Bedrock connectivity check
 (`tests/preflight_bedrock.py`, a cheap `GetFoundationModel` control-plane
 call, no token cost), and refuses to start the server if either fails.
 
-This exists because of a real incident: a short-lived Bedrock console
-API key, exported as `AWS_BEARER_TOKEN_BEDROCK` in a shell used earlier
-to launch the server, silently overrode working, non-expiring IAM
-credentials — botocore does this for *any* bedrock-runtime call the
-moment that var is set anywhere in the process environment, regardless
-of what credentials `boto3.client()` was actually constructed with (see
-`botocore.handlers._should_prefer_bearer_auth`). The server itself
-started fine; every chat request then failed with `"Bearer Token has
-expired"`, with no indication anything was wrong until a user tried to
-chat. Two fixes, not one: `agent/runtime.py` now clears that env var
-defensively at import time (permanent — the specific failure can't
-recur regardless of the launching shell's state), and the preflight
-check catches any *other* future auth/connectivity problem before the
-server is reachable, not during a conversation.
+`agent/runtime.py` clears `AWS_BEARER_TOKEN_BEDROCK` defensively at
+import time, since botocore silently prefers that env var over IAM
+credentials for any bedrock-runtime call if it's set anywhere in the
+process environment, regardless of what credentials `boto3.client()`
+was actually constructed with (see
+`botocore.handlers._should_prefer_bearer_auth`) — a non-expiring IAM
+credential chain can otherwise get silently overridden by a stale
+bearer token with no error until a request is actually made. The
+preflight check catches any other auth/connectivity problem before the
+server is reachable, not mid-conversation.
 
 ## Deferred / explicitly not built
 
 - **Multi-region / failover** for the AgentCore deploy — AgentCore
   Runtime is regional; there's no multi-region primitive to opt into
   short of standing up a second full runtime in a second region and
-  routing between them. Real infrastructure for a personal portfolio
-  demo; not worth building without a reason "up in one region" isn't
-  already answering.
-- **A general-purpose Cloudflare Workers + Neon rebuild** of the agent
-  itself, and a **generic multi-tenant MCP usage-tracker with Google
-  OAuth** (any Bedrock agent, not just this one) — both were explored
-  early as speculative future directions, gated on "pick a real use
-  case first." That use case became this project instead, which
-  satisfied the gate with a smaller, concrete, single-user build
-  (`mcp_server/`) rather than the generic multi-tenant one. The
-  Cloudflare/OAuth ideas were never started and aren't part of this
-  project's direction now — revisit only if a second, genuinely
-  different agent needs shared usage-tracking infrastructure later.
-- **Phase 6 (CI)** — written, needs the three manual setup steps in
-  `README.md` before it runs on push.
+  routing between them. Real infrastructure this scale of project
+  doesn't need; not worth building without a reason "up in one region"
+  isn't already answering.
+- **A generic multi-tenant MCP usage-tracker** decoupled from any one
+  Bedrock agent — `mcp-context-inspector` already covers the
+  per-owner-isolated, Google-authenticated multi-tenant case this
+  project actually needs; a fully generic, agent-agnostic version isn't
+  planned unless a second, genuinely different agent needs shared
+  usage-tracking infrastructure later.
 - **Phase 7 (Azure port)** — not started, deliberately deferred until
-  Phase 5 has been used and reviewed hands-on.
+  this project has been used and reviewed hands-on.
 
-## History (condensed)
+## Project history
 
-1. **Minimal hello-world deploy** — proved the AgentCore Runtime
-   deployment mechanics work end to end (a one-tool agent, ARM64
-   Docker image, Terraform-managed ECR/IAM, boto3-invoked). Superseded
-   once the real use case was picked; the code itself was removed from
-   the repo (no longer needed as a live reference — the mechanics it
-   proved are now documented here and in the current, real deploy).
-2. **Use case selection** — an SRE-style synthetic-incident-investigation
-   agent was chosen: cheap (synthetic data, no real API calls), simple
-   in per-invocation scope, but genuinely testable (deterministic
-   eval scenarios with a real negative case).
-3. **Phases 1–5 built and verified** — local agent, eval harness,
-   execution recorder, MCP server + dashboard + chat, AgentCore
-   deployment with DynamoDB storage. Three independent fresh-eyes
-   reviews caught and fixed real bugs before/after each major addition
-   (tool contract ambiguity, DynamoDB pagination, a data-file-drift
-   crash path, a directory name colliding with an installed package,
-   the storage-schema-not-initialized-on-read bug).
-4. **Chat UX fixed** — replaced a silent spinner with live SSE
-   streaming of every tool call, after direct feedback that the
-   original UI had no transparency into what the agent was doing.
-5. **This doc** — three overlapping planning docs consolidated into one
-   current-state-first reference, replacing `HANDOFF.md`,
-   `ClaudeFurther.md`, and `NEXT_ARCHITECTURE.md`.
-6. **Chat UI split out of `mcp_server/`, standalone dashboard removed** —
-   `web/` now owns the chat frontend on its own port (`:8788`); the old
-   `/dashboard` page is gone, replaced by an embedded panel behind a
-   toggle that does a real MCP handshake (see "MCP metrics panel"
-   above). Also added: a model selector, a real extended-thinking toggle
-   (genuine `reasoningContent`, not the existing narration), the
-   session/prompt_metrics split on `get_session_metrics`, prompt caching
-   (`cachePoint` + cache token capture), and client-computed context-%/
-   TPM in the panel. The SSE endpoint's disconnect-handling fix (see
-   "Chat streaming" above) was applied during this move rather than
-   fixing it twice in the old location.
-
-## Also worth fixing (outside this repo)
-
-`~/Downloads/portfolio/projects/a01-devops-agent/src/devops_agent/config.py`
-pins first-party model IDs (`anthropic.claude-sonnet-5-v1:0`) which are
-wrong for Bedrock and for this account. Should be
-`us.anthropic.claude-sonnet-4-6` and
-`us.anthropic.claude-haiku-4-5-20251001-v1:0`.
+An SRE-style synthetic-incident-investigation agent: cheap to run
+(synthetic data, no real third-party API calls), simple in
+per-invocation scope, but genuinely testable (deterministic eval
+scenarios with real negative cases). Started as a minimal AgentCore
+hello-world deploy to prove the deployment mechanics (ARM64 Docker
+image, Terraform-managed ECR/IAM), then grew into the current agent +
+chat UI + MCP observability layer. `mcp_server/` and `metrics/` were
+later extracted into the standalone `mcp-context-inspector` package
+(see "Repo layout" above) so they're reusable by any tool-calling
+agent, not just this one.
