@@ -22,7 +22,16 @@ from common.config import DEFAULT_REGION
 _CHARS_PER_TOKEN = 4
 
 REGION = os.environ.get("AWS_REGION", DEFAULT_REGION)
-MAX_TURNS = int(os.environ.get("MAX_TURNS", "10"))
+# Raised 6->10, then 10->15: a live CI eval run hit the 10-turn ceiling on
+# a multi-signal investigation (payments-api degradation — metrics, recent
+# deployments, and several search_logs calls before enough evidence to
+# answer), truncating a genuinely-correct-in-progress investigation into
+# "Hit the turn limit without finishing." Same root cause as the earlier
+# 6->10 raise (see docs/PROJECT.md's History section) — complex questions
+# genuinely need more tool calls than a short ceiling allows, and cutting
+# an investigation off mid-evidence-gathering is worse than a few extra
+# tool calls' latency/cost.
+MAX_TURNS = int(os.environ.get("MAX_TURNS", "15"))
 
 # botocore silently prefers AWS_BEARER_TOKEN_BEDROCK over IAM credentials
 # for any bedrock-runtime call the moment this var is set anywhere in the
