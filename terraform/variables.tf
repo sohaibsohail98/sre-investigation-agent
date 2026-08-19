@@ -31,5 +31,5 @@ variable "infra_table_name" {
 variable "github_repo" {
   description = "owner/repo for the GitHub Actions OIDC trust policy — CONFIRM this matches the actual repo before applying ci.tf"
   type        = string
-  default     = "sohaibsohail98/aws-bedrock-project"
+  default     = "sohaibsohail98/sre-investigation-agent"
 }
