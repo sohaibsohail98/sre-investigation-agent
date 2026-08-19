@@ -172,6 +172,14 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
+        # The List action above only enumerates providers; the data
+        # source then Gets the specific one by ARN — a second, separate
+        # AccessDenied on the very next API call.
+        Effect   = "Allow"
+        Action   = ["iam:GetOpenIDConnectProvider"]
+        Resource = "arn:aws:iam::${local.account_id}:oidc-provider/token.actions.githubusercontent.com"
+      },
+      {
         # Terraform state backend (the bucket/table Terraform itself uses,
         # not this project's own resources).
         Effect = "Allow"
