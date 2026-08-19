@@ -124,6 +124,7 @@ resource "aws_iam_role_policy" "github_actions" {
           # tags for every table in state, not just its existence.
           "dynamodb:DescribeContinuousBackups",
           "dynamodb:ListTagsOfResource",
+          "dynamodb:DescribeTimeToLive",
         ]
         Resource = aws_dynamodb_table.metrics.arn
       },
@@ -147,6 +148,7 @@ resource "aws_iam_role_policy" "github_actions" {
           "dynamodb:DescribeTable",
           "dynamodb:DescribeContinuousBackups",
           "dynamodb:ListTagsOfResource",
+          "dynamodb:DescribeTimeToLive",
         ]
         Resource = aws_dynamodb_table.infra.arn
       },
