@@ -721,6 +721,11 @@ let pendingMcpCredential = null;
 // in the consent step) — NOT verification. The signature is checked
 // server-side by the inspector's /auth/verify, the only place this
 // credential is trusted for anything security-relevant.
+//
+// Duplicated verbatim in mcp-context-inspector's mcp_server/server.py
+// (its own /auth/login consent flow) — deliberately not shared, since
+// these are two different repos/origins with no build step between
+// them. Fix bugs in both copies.
 function decodeJwtPayloadForDisplay(token) {
   try {
     const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");

@@ -34,10 +34,12 @@ agent investigates, a model selector (Sonnet 4.6 / Haiku 4.5), and a
 Thinking toggle for real Bedrock extended thinking.
 
 An MCP toggle (off by default) reveals a connect panel, it does not
-connect by itself. `mcp_server.server` prints a bearer token on
-startup, paste it in and click Connect for a real MCP Streamable-HTTP
-handshake, which populates recent sessions, tool/cost stats, and the
-Context Window Explorer for the session just run. This panel is
+connect by itself. Sign in with Google, review the consent screen, and
+click Authorize for a real MCP Streamable-HTTP handshake, which
+populates recent sessions, tool/cost stats, and the Context Window
+Explorer for the session just run. (No manual token entry here — that's
+only for connecting other MCP clients like Claude Desktop, see the
+inspector's own README.) This panel is
 read-only observability into past sessions; the chat calls the agent
 directly and always works with MCP off, MCP here is how you inspect
 what happened, not how the agent investigates. Full tool list, client

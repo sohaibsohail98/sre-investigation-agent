@@ -6,6 +6,11 @@
  * service a short *.workers.dev URL without moving it off Cloud Run.
  *
  * See docs/DEPLOYMENT.md for the deploy command.
+ *
+ * Identical (proxy logic, not config) to mcp-context-inspector's own
+ * cloudflare-proxy/worker.js, which fronts the inspector's Cloud Run
+ * service the same way — not shared across repos on purpose (each is
+ * independently deployable), but fix bugs in both copies.
  */
 export default {
   async fetch(request, env) {

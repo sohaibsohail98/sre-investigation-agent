@@ -295,9 +295,12 @@ Storage is a new `context_blocks` table (SQLite) / `CTXBLOCK#{seq:04d}`
 sort-key prefix (DynamoDB) — same shape, same dispatcher pattern as
 `turns`/`tool_calls`. `get_context_timeline(session_id)` reads the raw
 rows and computes `cumulative_tokens`/`cumulative_pct` in Python before
-returning, against `common.config.CONTEXT_WINDOW_TOKENS` (200_000,
-confirmed against Sonnet 4.6/Haiku 4.5's current model cards) — a single
-source of truth for context-window math shared with `web/chat.js`. A
+returning, against `mci_common.config.CONTEXT_WINDOW_TOKENS` (200_000,
+confirmed against Sonnet 4.6/Haiku 4.5's current model cards, from the
+pinned `mcp-context-inspector` dependency). `web/chat.js` keeps its own
+independent copy of the same number (`CONTEXT_WINDOW`, used for the
+segmented bar's proportions) — not actually shared across the
+Python/JS boundary, just kept in sync by hand. A
 `tool_result` block also carries the tool's `status` ("ok"/"error") so
 a failed call's block can be colored distinctly in the UI, via an
 optional `status` kwarg on `_add_block` — avoids needing a client-side

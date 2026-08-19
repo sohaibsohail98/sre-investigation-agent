@@ -82,7 +82,14 @@
 
         <div id="messages" class="space-y-1"></div>
 
-        <div class="sticky bottom-4 mt-6 space-y-2">
+        <!-- lg:sticky, not unconditional sticky: on mobile, the
+             suggestion chips above can wrap into 3 rows (vs. the 1-2
+             rows desktop usually shows), and an unconditionally sticky
+             "bottom-4" form would then overlap those wrapped chip rows
+             instead of following normal document flow. Desktop keeps
+             the always-visible sticky input; mobile just flows below
+             the chips like everything else on the page. -->
+        <div class="lg:sticky lg:bottom-4 mt-6 space-y-2">
           <form id="chat-form" class="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-surface-raised shadow-card p-2">
             <input
               id="prompt-input"
