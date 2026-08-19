@@ -180,6 +180,24 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "arn:aws:iam::${local.account_id}:oidc-provider/token.actions.githubusercontent.com"
       },
       {
+        # Self-referential: this role/policy are themselves managed by
+        # Terraform, so the untargeted `terraform apply` refreshes them
+        # too, needing the same read/describe access already granted
+        # for aws_iam_role.runtime.arn above but never for THIS role's
+        # own ARN. Same reasoning throughout this file — every resource
+        # actually in state needs Terraform's standard refresh-time
+        # read set, not just create/update/delete.
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+        ]
+        Resource = aws_iam_role.github_actions.arn
+      },
+      {
         # Terraform state backend (the bucket/table Terraform itself uses,
         # not this project's own resources).
         Effect = "Allow"
