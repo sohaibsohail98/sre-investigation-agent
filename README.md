@@ -35,8 +35,9 @@ tests/              eval_scenarios.json (8 scenarios, live) + run_eval.py +
                     test_*.py (pytest, no live calls) + conftest.py
 learn/              local_chat.py — Gradio dev loop, suggested prompts
 terraform/          ECR + IAM + DynamoDB + the AgentCore runtime + ci.tf
-                    (GitHub Actions OIDC role — applied, not yet wired up)
-.github/workflows/  deploy-agentcore.yml — eval + deploy on push to main
+                    (GitHub Actions OIDC role — applied and wired up)
+.github/workflows/  tests.yml (pytest, every push/PR) + deploy-agentcore.yml
+                    (live eval + deploy on push to main)
 docs/PROJECT.md     design reasoning, decisions, and history
 docs/screenshots/   README screenshots
 CLAUDE.md           working conventions for this repo
@@ -49,8 +50,8 @@ reusable package —
 [`mcp-context-inspector`](https://github.com/sohaibsohail98/mcp-context-inspector)
 — installed as a regular dependency (see `requirements-dev.txt` /
 `agent/requirements.txt`). Same `python -m mcp_server.server` command,
-same 7 tools, same import paths in `agent/app.py` — only where the code
-physically lives changed.
+same 8 tools (7 read + `record_session`), same import paths in
+`agent/app.py` — only where the code physically lives changed.
 
 ## Prerequisites
 
@@ -169,11 +170,13 @@ Starts two servers: `mcp_server.server` on `http://127.0.0.1:8787`
     toggle off; MCP here is a way to *inspect* what happened, not how
     the agent investigates.
 - **MCP tools**: point any MCP client (Claude Desktop, Cursor, this
-  session) at `http://127.0.0.1:8787/mcp` — 7 tools:
-  `get_session_metrics`, `get_token_breakdown`, `get_tool_metrics`,
+  session) at `http://127.0.0.1:8787/mcp` — 8 tools: 7 read-only
+  (`get_session_metrics`, `get_token_breakdown`, `get_tool_metrics`,
   `get_agent_trace`, `get_cost_estimate`, `get_recent_sessions`,
-  `get_context_timeline`. Plain REST equivalents (`/api/sessions`,
-  `/api/tool-metrics`, `/api/cost`, `/api/context-timeline/{session_id}`)
+  `get_context_timeline`) plus `record_session` (write, authenticated —
+  see `mcp-context-inspector`'s README for its per-owner auth model).
+  Plain REST equivalents (`/api/sessions`, `/api/tool-metrics`,
+  `/api/cost`, `/api/context-timeline/{session_id}`, `/api/record-session`)
   are also exposed — a curl-friendly debugging alternative to a full MCP
   handshake, calling the same underlying `metrics/store.py` functions.
 
@@ -267,21 +270,23 @@ role. The Terraform state backend (S3 bucket + DynamoDB lock table) is
 infrastructure for Terraform itself, not this project — it's cheap
 enough ($0-ish) to just leave alone.
 
-## 6. CI pipeline (GitHub Actions) — written, not yet wired up
+## 6. CI pipeline (GitHub Actions) — wired up and running
 
-`.github/workflows/deploy-agentcore.yml` runs the eval suite then
-deploys on every push to `main` (or manually via the Actions tab). Uses
-AWS OIDC — no stored AWS keys in repo secrets. **Three things need doing
-once, before this actually runs:**
-
-1. **Confirm `terraform/variables.tf`'s `github_repo` variable** matches
-   the real `owner/repo` this gets pushed to (currently defaults to
-   `sohaibsohail98/aws-bedrock-project` — a placeholder, not confirmed).
-2. **`terraform/ci.tf` is already applied** (the IAM role GitHub Actions
-   assumes via OIDC) — get its ARN with `terraform output
-   github_actions_role_arn`. Only re-apply if you change `github_repo`.
-3. **Set the repo secret** `AWS_GITHUB_ACTIONS_ROLE_ARN` to that output,
-   in GitHub repo Settings → Secrets and variables → Actions.
+Two workflows:
+- **`.github/workflows/tests.yml`** — plain `pytest` on every push/PR,
+  no AWS credentials needed. Always green if the unit suite is.
+- **`.github/workflows/deploy-agentcore.yml`** — runs the live eval
+  suite (real Bedrock cost, 8 scenarios) then deploys, on every push to
+  `main` (or manually via the Actions tab). Uses AWS OIDC — no stored
+  AWS keys in repo secrets. `terraform/variables.tf`'s `github_repo`
+  matches the real repo, `terraform/ci.tf`'s OIDC trust policy is
+  applied (including wildcarding the numeric owner/repo IDs GitHub's
+  actual token subject embeds — confirmed via CloudTrail, not just the
+  plain `owner/repo` name format older docs describe), and the
+  `AWS_GITHUB_ACTIONS_ROLE_ARN` repo secret is set. If you fork this
+  repo, you'll need to redo those three steps for your own AWS account
+  — get the role ARN via `terraform output github_actions_role_arn`
+  after applying `ci.tf`.
 
 ## Before you push this to GitHub — status of the account-ID decision
 

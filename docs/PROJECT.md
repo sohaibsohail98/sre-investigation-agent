@@ -29,22 +29,26 @@ Owner: Sohaib Sohail, job-seeking. Feeds a broader portfolio plan
   `agent/app.py` function the deployed agent uses
 - 8/8 deterministic eval scenarios passing (`tests/run_eval.py`, real
   Bedrock cost — run before committing a prompt/tool change)
-- 34 unit tests passing (`pytest`, no live AWS calls) covering the
+- 37 unit tests passing (`pytest`, no live AWS calls) covering the
   bugs described below, so they can't silently regress
-- MCP server (7 tools, including the Context Window Explorer's
-  `get_context_timeline` — now the standalone `mcp-context-inspector`
-  package, see "Repo layout" above) + chat UI (`web/`, separate
-  process/port), the latter live-streaming tool calls as they happen
-  (see "Chat streaming" below) and able to open a real MCP handshake for
-  an embedded metrics panel
+- MCP server (8 tools — 7 read-only plus `record_session`, a write tool
+  so a per-user-authenticated caller can record its own sessions,
+  including the Context Window Explorer's `get_context_timeline` — now
+  the standalone `mcp-context-inspector` package, see "Repo layout"
+  above) + chat UI (`web/`, separate process/port), the latter
+  live-streaming tool calls as they happen (see "Chat streaming" below)
+  and able to open a real MCP handshake for an embedded metrics panel
 - Deployed to AgentCore Runtime, DynamoDB-backed, confirmed working via
   live invocation (check `terraform output agent_runtime_arn` for the
   current ARN — it changes on redeploy)
+- CI (`.github/workflows/tests.yml` + `deploy-agentcore.yml`) fully
+  wired up and passing end to end — OIDC trust policy, repo secret, and
+  a batch of Terraform-refresh IAM permissions the original setup
+  missed (see docs section below)
 
-**Not built**: Phase 6 (CI/CD) is written but needs three manual setup
-steps (see `README.md`'s CI section) before it actually runs. Phase 7
-(an Azure AI Foundry port, for an AWS-vs-Azure comparison) hasn't
-started — deliberately deferred until Phase 5 has been used for real.
+**Not built**: Phase 7 (an Azure AI Foundry port, for an AWS-vs-Azure
+comparison) hasn't started — deliberately deferred until Phase 5 has
+been used for real.
 
 ## Repo layout
 
@@ -375,8 +379,49 @@ pre-existing resources.
 `.github/workflows/deploy-agentcore.yml` runs the eval suite then
 deploys on push to `main`. Uses AWS OIDC (`terraform/ci.tf`, referencing
 an OIDC provider already present in the AWS account) rather than a
-long-lived AWS key in repo secrets. Written, not yet wired up — see
-`README.md`'s CI section for the three one-time setup steps.
+long-lived AWS key in repo secrets. Wired up and running — see
+`README.md`'s CI section for the one-time setup steps a fork would need
+to redo.
+
+Getting it fully working took more than the original "three setup
+steps" plan accounted for, all found by actually running it rather than
+inferring from AWS docs:
+
+1. **The OIDC trust policy's `sub` condition needed the plain
+   `repo:owner/repo:ref:refs/heads/BRANCH` format** — this rejected
+   every request with "Not authorized to perform
+   sts:AssumeRoleWithWebIdentity" even with the correct owner/repo
+   names. CloudTrail showed the actual presented claim embeds immutable
+   numeric owner/repo IDs (`repo:owner@123/repo@456:ref:...`) — GitHub
+   changed this at some point after the original trust policy was
+   written. Fixed by wildcarding the ID segments.
+2. **The CI role had zero read access to the `sre-agent-infra` DynamoDB
+   table** — only table-management permissions on the metrics table.
+   Every SRE tool call in CI silently got `AccessDenied`, so the eval
+   suite failed 7-8/8 with "missing facts in answer" and no exception
+   (tool errors are handled gracefully by design, so this looked like a
+   model-quality problem, not a permissions one, until traced).
+3. **Terraform's refresh phase needs broader read/describe/list
+   permissions than create/update/delete** for every resource already
+   in state — `ecr:ListTagsForResource`,
+   `dynamodb:DescribeContinuousBackups`/`DescribeTimeToLive`/`ListTagsOfResource`,
+   `iam:ListRolePolicies`/`ListAttachedRolePolicies`/`ListInstanceProfilesForRole`.
+   Found one AccessDenied at a time by actually running `terraform
+   apply` from CI, not by reading the AWS provider's docs in advance.
+4. **`agent/Dockerfile` had two bugs, both invisible until the image
+   actually built for real for the first time**: `COPY metrics/
+   ./metrics/` copied a directory that no longer exists locally (moved
+   to `mcp-context-inspector` in the repo split, installed via pip
+   instead), and `common/` — imported directly by both `agent/app.py`
+   and `agent/runtime.py` — was never copied into the image at all, a
+   gap that predates the repo split entirely. Also needed `git`
+   installed in the base image, since `agent/requirements.txt` now has
+   a `git+https://...` pin the base `python:3.13-slim` image can't
+   `pip install` without it.
+
+This is the actual shape of "wiring up CI for the first time" —
+mostly IAM/infra gaps that only a real run surfaces, not something a
+docs review would have caught in advance.
 
 ## AWS/Bedrock gotchas — read before touching model config
 
