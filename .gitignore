@@ -22,7 +22,10 @@ data/metrics.db
 *.pem
 
 # Session/handoff working notes — not part of the shipped project.
-PLAN.md
+docs/PLAN.md
 
 # Local-only cleanup notes, never shipped
 docs/internal/
+
+# Wrangler local cache/state — regenerated per machine, not shipped
+cloudflare-proxy/.wrangler/

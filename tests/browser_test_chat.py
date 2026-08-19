@@ -89,6 +89,24 @@ def main():
 
             page.goto(CHAT_URL)
 
+            # Static capability picker: chips pre-fill the input for
+            # editing, they must never auto-send like the suggestion
+            # buttons below do.
+            print("Checking static capability picker...")
+            page.wait_for_selector('[data-role="capability-button"]', timeout=5_000)
+            capability_buttons = page.locator('[data-role="capability-button"]')
+            assert capability_buttons.count() > 0, "no capability picker buttons rendered"
+            first_capability_query = capability_buttons.first.get_attribute("title")
+            capability_buttons.first.click()
+            assert page.locator("#prompt-input").input_value() == first_capability_query, (
+                "capability chip did not pre-fill the input with its query"
+            )
+            assert page.locator('[data-role="user-message"]').count() == 0, (
+                "capability chip must only pre-fill the input, not send it"
+            )
+            page.fill("#prompt-input", "")
+            print("✅ Capability picker pre-fills the input without sending.")
+
             print("Waiting for suggested prompts to load...")
             page.wait_for_selector("#suggestions button", timeout=10_000)
             suggestion_buttons = page.locator("#suggestions button")
@@ -163,8 +181,14 @@ def main():
             )
             print("✅ Toggle reveals the connect form without auto-connecting.")
 
-            page.fill('[data-role="mcp-token-input"]', TEST_MCP_AUTH_TOKEN)
-            page.click('[data-role="mcp-connect-btn"]')
+            # Manual token entry no longer exists in the UI (chat.html's
+            # mcp-connect-form is Google-sign-in-only now — see its
+            # comment for why) — a real Google credential can't be
+            # scripted here, so this calls the same connectMcp(token)
+            # function the Google-authorize flow itself calls, directly,
+            # to still exercise the real cross-process MCP handshake
+            # mechanics end to end.
+            page.evaluate("(token) => connectMcp(token)", TEST_MCP_AUTH_TOKEN)
             page.wait_for_function(
                 "document.querySelector('[data-role=\"mcp-status\"]').textContent === 'connected'",
                 timeout=10_000,

@@ -97,6 +97,8 @@ def _status(url, method="GET", headers=None):
         ("/chat.js", 200),
         ("/mcp-client.js", 200),
         ("/api/suggested-prompts", 200),
+        ("/api/config", 200),
+        ("/health", 200),
     ],
 )
 def test_web_server_routes(running_servers, path, expected):

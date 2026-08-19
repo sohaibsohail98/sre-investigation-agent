@@ -4,8 +4,14 @@ either if any check fails. Use this instead of bare
 `python -m mcp_server.server` / `python -m web.server`:
 
     uv run python -m scripts.dev_server
+
+Set DEMO_MODE=1 to skip the Bedrock preflight and run web.server in
+fixture-replay mode instead — the point is a fresh clone with no AWS
+credentials at all can still run the chat UI end to end (see
+web/demo_replay.py). The unit test suite still runs either way.
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -20,8 +26,12 @@ def run(description, cmd):
 
 
 def main():
+    demo_mode = bool(os.environ.get("DEMO_MODE"))
     run("Unit tests (pytest)", [sys.executable, "-m", "pytest", "-q"])
-    run("Bedrock preflight check", [sys.executable, "-m", "tests.preflight_bedrock"])
+    if demo_mode:
+        print("\n─── DEMO_MODE=1 — skipping Bedrock preflight (no live calls) " + "─" * 5)
+    else:
+        run("Bedrock preflight check", [sys.executable, "-m", "tests.preflight_bedrock"])
 
     print("\n─── Starting mcp_server.server (:8787) + web.server (:8788) " + "─" * 5)
     # Two separate processes, not one execv — web.server needs

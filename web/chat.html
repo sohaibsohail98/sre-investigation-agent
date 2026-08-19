@@ -57,8 +57,27 @@
       </p>
     </article>
 
+    <!-- Hidden by default; shown by chat.js only when GET /api/config
+         reports demo_mode=true (the public deployment) — a local dev
+         run never sees this. -->
+    <div id="demo-banner" data-role="demo-banner" class="hidden rounded-2xl border border-warn/20 bg-warn/10 shadow-card p-4 mb-6 text-sm text-slate-300 flex flex-wrap items-center justify-between gap-3">
+      <span>
+        <strong class="text-slate-100">Demo mode</strong> — answers below are replayed from a fixed set of
+        recorded investigations, not live model calls.
+      </span>
+      <span id="demo-signin" data-role="demo-signin"></span>
+    </div>
+
     <div class="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
       <div class="min-w-0">
+        <!-- Static, client-side only (see chat.js's CAPABILITY_CATEGORIES) —
+             one example query per tool, so a new visitor sees the agent's
+             range at a glance. Unlike #suggestions below (fetched from the
+             eval scenarios, sends immediately on click), these only
+             pre-fill the input for editing — a menu of what's askable, not
+             a one-click canned demo. -->
+        <div id="capabilities" class="flex flex-wrap gap-2 mb-3 text-sm text-slate-500"></div>
+
         <div id="suggestions" class="flex flex-wrap gap-2 mb-6 text-sm text-slate-500">Loading suggested questions…</div>
 
         <div id="messages" class="space-y-1"></div>
@@ -119,32 +138,57 @@
         </div>
 
         <!-- Shown until a real handshake succeeds — nothing below this
-             renders, and no query is made, until "Connect" is clicked
-             and the server accepts the token. Mirrors adding an MCP
-             server in Claude Desktop: connection is a deliberate action
-             with a visible result, not a side effect of a checkbox. -->
+             renders, and no query is made, until Google sign-in +
+             Authorize both complete. Mirrors adding an MCP server in
+             Claude Desktop: connection is a deliberate action with a
+             visible result, not a side effect of a checkbox. No manual
+             token entry — Google sign-in is the only way in, since it's
+             the only path that can prove who you are without asking you
+             to go copy a token from another page. -->
         <div id="mcp-connect-form" data-role="mcp-connect-form" class="space-y-2">
           <p class="text-xs text-slate-500">
-            Enter the auth token printed in the <code class="text-slate-400">mcp_server.server</code>
-            console output, then connect.
+            Sign in with Google to connect — scoped to your own data only.
           </p>
-          <input
-            id="mcp-token-input"
-            data-role="mcp-token-input"
-            type="password"
-            placeholder="Server auth token"
-            autocomplete="off"
-            class="w-full bg-surface-raised border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-accent/50"
-          >
-          <button
-            id="mcp-connect-btn"
-            data-role="mcp-connect-btn"
-            type="button"
-            class="w-full rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 transition"
-          >Connect</button>
+          <div id="mcp-google-signin" data-role="mcp-google-signin"></div>
+          <p id="mcp-google-signin-unavailable" data-role="mcp-google-signin-unavailable" class="hidden text-xs text-slate-500">
+            Google sign-in isn't configured on the MCP server yet.
+          </p>
+        </div>
+
+        <!-- Consent step — shown after Google sign-in succeeds, before
+             any token is minted. Authorize calls /auth/verify; Cancel
+             discards the credential and mints nothing. -->
+        <div id="mcp-consent" data-role="mcp-consent" class="hidden space-y-3">
+          <div class="flex items-center justify-center gap-2 py-1">
+            <div class="h-8 w-8 rounded-full bg-surface-raised border border-white/10 flex items-center justify-center text-accent text-sm">◈</div>
+            <span class="text-slate-600 text-xs">┅┅┅&gt;</span>
+            <div class="h-8 w-8 rounded-full bg-gradient-to-br from-accent to-sky-400 flex items-center justify-center text-white text-sm relative">
+              ◈
+              <span class="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-ok text-[8px] flex items-center justify-center text-white border-2 border-surface-card">✓</span>
+            </div>
+          </div>
+          <p class="text-center text-sm font-semibold text-slate-100">Connect to mcp-context-inspector?</p>
+          <p id="mcp-consent-identity" data-role="mcp-consent-identity" class="text-center text-xs text-slate-500"></p>
+          <div class="rounded-lg border border-white/10 bg-surface-raised p-3 space-y-1.5 text-xs text-slate-400">
+            <div class="flex gap-2"><span class="text-accent">&bull;</span> Read your own session metrics and history</div>
+            <div class="flex gap-2"><span class="text-accent">&bull;</span> Record new sessions attributed to your account</div>
+            <div class="flex gap-2"><span class="text-accent">&bull;</span> Nothing else</div>
+          </div>
+          <div class="flex gap-2">
+            <button id="mcp-consent-cancel" data-role="mcp-consent-cancel" type="button" class="flex-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/20 transition">Cancel</button>
+            <button id="mcp-consent-authorize" data-role="mcp-consent-authorize" type="button" class="flex-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 transition">Authorize</button>
+          </div>
         </div>
 
         <div id="mcp-data" data-role="mcp-data" class="hidden space-y-4">
+          <!-- Brief confirmation shown right after Authorize succeeds;
+               stays visible as a small persistent strip, not a toast
+               that disappears the info. -->
+          <div id="mcp-connected-banner" data-role="mcp-connected-banner" class="hidden flex items-center gap-2 rounded-lg border border-ok/20 bg-ok/10 px-2.5 py-1.5 text-[11px] text-ok">
+            <span class="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-ok text-white text-[9px]">&check;</span>
+            <span id="mcp-connected-email" data-role="mcp-connected-email"></span>
+          </div>
+
           <div>
             <div class="flex items-center justify-between mb-2">
               <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wide">Context Window Explorer</h3>

@@ -1,304 +1,82 @@
-# SRE Investigation Agent — AgentCore + MCP observability
+# SRE Investigation Agent: AgentCore + MCP observability
 
-An incident-investigation agent (5 tools, deterministic mock
-infrastructure data — payments-api, checkout-api, auth-api,
-notifications) deployed on Amazon Bedrock AgentCore Runtime, with its
-own MCP server for per-prompt cost/token/tool-call metrics and a
-live-streaming chat UI that can open a real MCP handshake to show them
-in an embedded panel.
+An incident investigation agent (5 tools, deterministic mock
+infrastructure: payments-api, checkout-api, auth-api, notifications) on
+Amazon Bedrock AgentCore Runtime, with its own MCP server for
+per-prompt cost/token/tool-call metrics and a live-streaming chat UI.
+Full design reasoning and history: `docs/PROJECT.md`. Working
+conventions: `CLAUDE.md`.
 
-**Full design reasoning, decisions, and history live in
-`docs/PROJECT.md`.** This file is just "how do I run it" — everything
-below is Phases 1–5, all built, tested, and deployed. See `CLAUDE.md`
-for working conventions in this repo (notably: test after every feature,
-not at the end).
+[![Tests](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/tests.yml)
+[![Deploy](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/deploy-agentcore.yml/badge.svg)](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/deploy-agentcore.yml)
 
-![Chat UI](docs/screenshots/chat-ui.png)
-
-The MCP panel's headline feature — the **Context Window Explorer** —
-shows exactly what entered the model's context window, block by block,
-with honest (labeled-estimated) token counts:
-
-![Context Window Explorer](docs/screenshots/context-window-explorer.png)
-
-## Repo layout
-
-```
-agent/              runtime.py (boilerplate loop) + app.py (this agent's
-                    config) + system_prompt.txt + Dockerfile
-tools/              5 SRE tools, each with get_tool_spec() + implementation
-data/               synthetic services/deployments/logs/costs (+ metrics.db
-                    once you run it locally — gitignored)
-web/                chat UI (:8788) — server.py + chat.html/js +
-                    mcp-client.js (real MCP handshake for the metrics panel)
-tests/              eval_scenarios.json (8 scenarios, live) + run_eval.py +
-                    test_*.py (pytest, no live calls) + conftest.py
-learn/              local_chat.py — Gradio dev loop, suggested prompts
-terraform/          ECR + IAM + DynamoDB + the AgentCore runtime + ci.tf
-                    (GitHub Actions OIDC role — applied and wired up)
-.github/workflows/  tests.yml (pytest, every push/PR) + deploy-agentcore.yml
-                    (live eval + deploy on push to main)
-docs/PROJECT.md     design reasoning, decisions, and history
-docs/screenshots/   README screenshots
-CLAUDE.md           working conventions for this repo
-.env.example        documented env vars (no secrets — auth is your AWS creds)
-```
-
-The MCP server (`mcp_server/`) and execution-metrics recorder
-(`metrics/`) used to live in this repo; they're now a standalone,
-reusable package —
-[`mcp-context-inspector`](https://github.com/sohaibsohail98/mcp-context-inspector)
-— installed as a regular dependency (see `requirements-dev.txt` /
-`agent/requirements.txt`). Same `python -m mcp_server.server` command,
-same 8 tools (7 read + `record_session`), same import paths in
-`agent/app.py` — only where the code physically lives changed.
-
-## Prerequisites
-
-- AWS credentials with Bedrock + AgentCore + ECR + DynamoDB access, and
-  model access granted for `us.anthropic.claude-sonnet-4-6` (see
-  `docs/PROJECT.md`'s "AWS/Bedrock gotchas" section if you hit
-  `ValidationException` — there are two easy-to-miss traps documented
-  there).
-- `uv` (or plain `pip`) — Python 3.13+.
-- Docker with buildx, for the deploy step only.
-- Terraform >= 1.9, for the deploy step only.
+## Run it locally
 
 ```sh
-cd aws-bedrock-project
-uv venv                       # if .venv doesn't already exist
-source .venv/bin/activate
-uv pip install -r requirements-dev.txt
+cd sre-investigation-agent
+uv venv && source .venv/bin/activate && uv pip install -r requirements-dev.txt
+uv run python -m scripts.dev_server
 ```
 
-## 1. Run it locally (no AWS deploy needed)
+Runs the unit suite plus a live Bedrock connectivity check, then starts
+`mcp_server.server` (`:8787`) and `web.server` (`:8788`, the chat UI).
+No AWS account? Set `DEMO_MODE=1` first, it skips the Bedrock check and
+replays pre-recorded investigations through the same code path
+(`web/demo_replay.py`), so a fresh clone runs with zero live calls.
 
-```sh
-uv run python -m learn.local_chat
-```
+<img src="docs/screenshots/chat-ui.png" width="700" alt="Chat UI">
 
-Opens a Gradio chat UI backed by the exact same `agent/app.py` function
-the deployed agent uses. Try: *"Why is payments-api degraded?"* or
-*"Investigate checkout-api and tell me whether there is evidence of a
-recent deployment causing the issue."* — the second one is the
-deliberately-tricky negative case (no deployment exists for
-checkout-api; a good answer traces it to the `inventory-service`
-dependency instead).
+Open `http://127.0.0.1:8788/chat`: every tool call streams live as the
+agent investigates, a model selector (Sonnet 4.6 / Haiku 4.5), and a
+Thinking toggle for real Bedrock extended thinking.
 
-Every message here writes a row to `data/metrics.db` (SQLite), same as
-a real invocation — so the MCP metrics panel (§3) has something to show
-after you've chatted with it a bit. The chat window shows clickable
-suggested questions (`examples=`) pulled from `tests/eval_scenarios.json`
-— same source the web chat UI (§3) uses, so both stay in sync
-automatically.
+An MCP toggle (off by default) reveals a connect panel, it does not
+connect by itself. `mcp_server.server` prints a bearer token on
+startup, paste it in and click Connect for a real MCP Streamable-HTTP
+handshake, which populates recent sessions, tool/cost stats, and the
+Context Window Explorer for the session just run. This panel is
+read-only observability into past sessions; the chat calls the agent
+directly and always works with MCP off, MCP here is how you inspect
+what happened, not how the agent investigates. Full tool list, client
+configs, and the auth model:
+[`mcp-context-inspector`](https://github.com/sohaibsohail98/mcp-context-inspector#readme).
 
-## 2. Run the tests
+## Run the tests
 
 ```sh
 uv run python -m pytest              # unit tests, no AWS calls, free
 uv run python -m tests.run_eval      # 8 live scenarios, real Bedrock cost
 ```
 
-`pytest` covers the loop mechanics, tool contracts, and both storage
-backends (mocked, no AWS needed) — run this after any code change.
-`run_eval.py` runs all 8 fixed scenarios from `tests/eval_scenarios.json`
-against the live agent, scoring each on (a) whether the expected tools
-were actually called and (b) whether key facts appear in the answer —
-run this after any prompt or tool change, not every trivial edit. Should
-print `8/8 scenarios passed`.
+Deterministic mock data keeps eval scoring reproducible run to run.
+`tests/eval_results.json` has the last recorded 8/8 run.
 
-## 3. MCP server + chat UI
+## Deploy to AWS
 
 ```sh
-uv run python -m scripts.dev_server
+./scripts/deploy.sh
+uv run python -m scripts.invoke "Why is payments-api degraded?"
 ```
 
-**Use this, not a bare `python -m mcp_server.server` / `python -m
-web.server`** — it runs the full unit suite and a live Bedrock
-connectivity check first, then starts both servers as separate
-processes, and refuses to start either if a check fails.
-`agent/runtime.py` also clears `AWS_BEARER_TOKEN_BEDROCK` defensively
-at import time, since botocore silently prefers that env var over IAM
-credentials for any bedrock-runtime call if it's set anywhere in the
-environment, regardless of what credentials were actually configured —
-if you ever see `"Bearer Token has expired"` on a chat request despite
-working AWS credentials, check `env | grep AWS_BEARER_TOKEN_BEDROCK` in
-the shell you're launching from.
+Full prerequisites and commands: `docs/DEPLOYMENT.md`. An idle
+AgentCore runtime costs $0 (consumption-based), no cost reason to tear
+it down between sessions.
 
-Starts two servers: `mcp_server.server` on `http://127.0.0.1:8787`
-(protocol + metrics data access only) and `web.server` on
-`http://127.0.0.1:8788` (the chat UI). Three ways to use it:
+## CI
 
-- **Chat**: open `http://127.0.0.1:8788/chat` — Tailwind CDN, no build
-  step, with clickable suggested questions above the input, same
-  4-question curated set as the Gradio loop's `examples=`. **Every tool
-  call streams live** as the agent investigates (Server-Sent Events) —
-  you see each tool it calls, its arguments, and its result the moment
-  it happens, plus the model's reasoning between steps, not just a
-  spinner then a final answer. Talks to `agent/app.py`'s
-  `invoke_streaming()` directly, not through MCP — this is a
-  webserver-reuse convenience, not a protocol claim. This is the
-  "proper" chat UI (vs. Gradio being the fast local dev loop) — the one
-  worth screenshotting.
-  - Near the input: a **model selector** (Sonnet 4.6 / Haiku 4.5), a
-    **Thinking** toggle (real Bedrock extended thinking — a genuine
-    `reasoningContent` block, shown as a collapsible "Thinking…" panel,
-    distinct from the plain narration text), and an **MCP server**
-    toggle (off by default).
-  - Turning the MCP toggle on **reveals a connect panel — it does not
-    connect by itself.** `mcp_server.server` prints a bearer token to its
-    own console on startup (a fresh random one each run, unless
-    `MCP_AUTH_TOKEN` is set); paste that into the panel and click
-    **Connect** to run a **real MCP Streamable-HTTP handshake** from the
-    browser (`web/mcp-client.js` — genuine JSON-RPC framing against
-    `mcp_server`'s `/mcp` endpoint, no SDK). Only once it reports
-    "connected" does the right-side panel populate: recent sessions,
-    aggregate tool/cost stats, and per-prompt detail (session vs. prompt
-    metrics, per-turn context-%, cache-read tokens) for the session
-    currently being chatted in. This mirrors adding an MCP server in
-    Claude Desktop — connecting is a deliberate, authenticated action
-    with a visible result, not a side effect of a checkbox. Note this
-    panel is read-only observability into `data/metrics.db`'s full
-    history (including past sessions), independent of the chat itself —
-    the chat calls the agent directly and always works with the MCP
-    toggle off; MCP here is a way to *inspect* what happened, not how
-    the agent investigates.
-- **MCP tools**: point any MCP client (Claude Desktop, Cursor, this
-  session) at `http://127.0.0.1:8787/mcp` — 8 tools: 7 read-only
-  (`get_session_metrics`, `get_token_breakdown`, `get_tool_metrics`,
-  `get_agent_trace`, `get_cost_estimate`, `get_recent_sessions`,
-  `get_context_timeline`) plus `record_session` (write, authenticated —
-  see `mcp-context-inspector`'s README for its per-owner auth model).
-  Plain REST equivalents (`/api/sessions`, `/api/tool-metrics`,
-  `/api/cost`, `/api/context-timeline/{session_id}`, `/api/record-session`)
-  are also exposed — a curl-friendly debugging alternative to a full MCP
-  handshake, calling the same underlying `metrics/store.py` functions.
-
-Example Claude Desktop config entry:
-```json
-{
-  "mcpServers": {
-    "sre-agent-metrics": { "url": "http://127.0.0.1:8787/mcp" }
-  }
-}
-```
-(No auth — this is the local, single-user design, deliberately kept
-small. See `docs/PROJECT.md`'s "Deferred" section for what a real
-multi-user version was speculatively scoped to need, and why it isn't
-part of this project's direction.)
-
-## 4. Deploy to AWS (Bedrock AgentCore)
-
-```sh
-cd terraform
-terraform init                 # first time only
-
-# 1. Infra first (the runtime needs an image to already exist)
-terraform plan -target=aws_ecr_repository.agent \
-  -target=aws_ecr_lifecycle_policy.agent \
-  -target=aws_dynamodb_table.metrics \
-  -target=aws_iam_role.runtime \
-  -target=aws_iam_role_policy.runtime \
-  -out=infra.tfplan
-terraform apply infra.tfplan
-
-# 2. Build + push (ARM64 — AgentCore requires it)
-cd ..
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin \
-  <your-account-id>.dkr.ecr.us-east-1.amazonaws.com
-docker buildx build --platform linux/arm64 \
-  -f agent/Dockerfile \
-  -t <your-account-id>.dkr.ecr.us-east-1.amazonaws.com/sohaib-bedrock-agentcore:sre-agent \
-  --push .
-
-# 3. The runtime itself
-cd terraform
-terraform plan -out=runtime.tfplan
-terraform apply runtime.tfplan
-```
-
-Invoke it (swap in the ARN from `terraform output agent_runtime_arn`):
-```sh
-uv run python -c "
-import boto3, json, uuid
-c = boto3.client('bedrock-agentcore', region_name='us-east-1')
-resp = c.invoke_agent_runtime(
-    agentRuntimeArn='<paste ARN here>',
-    runtimeSessionId=str(uuid.uuid4()).replace('-', '') + 'abcdefgh',
-    payload=json.dumps({'prompt': 'Why is payments-api degraded?'}).encode(),
-    contentType='application/json', accept='application/json',
-)
-print(resp['response'].read().decode())
-"
-```
-
-Deployed, the agent writes metrics to **DynamoDB** instead of SQLite
-(`STORAGE_BACKEND=dynamodb`, set automatically via Terraform) — this
-switch is mandatory, not optional, because AgentCore's container
-filesystem doesn't persist across invocations (see `docs/PROJECT.md`'s
-Storage section for why). The MCP server/chat UI still run locally
-against that same DynamoDB table if you point `metrics/store.py` at it
-(`STORAGE_BACKEND=dynamodb METRICS_TABLE=sre-agent-metrics uv run python -m scripts.dev_server`).
-
-## 5. Tear down (optional — not required for cost reasons)
-
-AgentCore Runtime is purely consumption-based, verified against AWS's
-own pricing page: **an idle-but-registered runtime costs $0** — billing
-only starts when a session actually runs. DynamoDB on-demand is the
-same story. The only thing that ticks regardless of use is ECR image
-storage (~5p/month, negligible). So there's no real cost reason to tear
-down between sessions — leave it deployed if you want it sitting there
-ready to test. Tear down if you'd rather not have it lying around for
-other reasons (tidiness, or you're switching to a different image tag
-and don't want two runtimes):
-
-```sh
-cd terraform
-terraform plan -destroy -out=destroy.tfplan
-terraform apply destroy.tfplan
-```
-
-This removes the runtime, ECR repo, DynamoDB metrics table, and IAM
-role. The Terraform state backend (S3 bucket + DynamoDB lock table) is
-infrastructure for Terraform itself, not this project — it's cheap
-enough ($0-ish) to just leave alone.
-
-## 6. CI pipeline (GitHub Actions) — wired up and running
-
-Two workflows:
-- **`.github/workflows/tests.yml`** — plain `pytest` on every push/PR,
-  no AWS credentials needed. Always green if the unit suite is.
-- **`.github/workflows/deploy-agentcore.yml`** — runs the live eval
-  suite (real Bedrock cost, 8 scenarios) then deploys, on every push to
-  `main` (or manually via the Actions tab). Uses AWS OIDC — no stored
-  AWS keys in repo secrets. `terraform/variables.tf`'s `github_repo`
-  matches the real repo, `terraform/ci.tf`'s OIDC trust policy is
-  applied (wildcarding the numeric owner/repo IDs GitHub's token
-  subject embeds, not just the plain `owner/repo` name format), and the
-  `AWS_GITHUB_ACTIONS_ROLE_ARN` repo secret is set. If you fork this
-  repo, you'll need to redo those three steps for your own AWS account
-  — get the role ARN via `terraform output github_actions_role_arn`
-  after applying `ci.tf`.
+`tests.yml` runs the unit suite on every push/PR. `deploy-agentcore.yml`
+runs the live eval then deploys on every push to `main`, via AWS OIDC,
+no stored keys. Both green, badges above.
 
 ## Known behavior worth knowing about
 
-- The system prompt is deliberately **principled, not scripted** — it
-  doesn't dictate tool-call order. This means answers are correct but
-  not perfectly reproducible turn-by-turn (the model might check logs
-  before metrics one run, the reverse the next). The eval suite scores
-  on outcome (right tools used, right facts stated), not exact sequence.
-- `search_logs` matches substrings — the prompt nudges the model to
-  search efficiently rather than probe many single words one at a time;
-  if you see `"Hit the turn limit without finishing"`, that's what's
-  going wrong, and `MAX_TURNS` (default 15, env var override) is the
-  knob if it recurs after a prompt change.
+- The system prompt is principled, not scripted: answers are correct
+  but not perfectly reproducible turn by turn. Eval scores on outcome,
+  not exact tool-call sequence.
+- `search_logs` matches substrings. `"Hit the turn limit without
+  finishing"` means raise `MAX_TURNS` (default 15, env var override).
+- See `docs/PROJECT.md`'s gotchas section for the
+  `AWS_BEARER_TOKEN_BEDROCK` incident.
 
-## Not built
-
-**Phase 6 (CI/CD)** is written and the AWS side is applied, but the repo
-secret still needs setting — needs the setup steps in §6 above before it
-actually runs on push.
-
-**Phase 7 (Azure AI Foundry port)** — genuinely not started, still
-deferred. See `docs/PROJECT.md` for the full deferred/not-built list.
+**Phase 7 (Azure AI Foundry port)** is not started, still deferred, see
+`docs/PROJECT.md`.

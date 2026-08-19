@@ -13,6 +13,7 @@ const messagesEl = document.getElementById("messages");
 const formEl = document.getElementById("chat-form");
 const inputEl = document.getElementById("prompt-input");
 const suggestionsEl = document.getElementById("suggestions");
+const capabilitiesEl = document.getElementById("capabilities");
 const modelSelectEl = document.getElementById("model-select");
 const thinkingToggleEl = document.getElementById("thinking-toggle");
 const mcpToggleEl = document.getElementById("mcp-toggle");
@@ -22,6 +23,42 @@ const mcpStatusEl = document.getElementById("mcp-status");
 const CONTEXT_WINDOW = 200_000; // Sonnet 4.6 and Haiku 4.5, both confirmed against current model cards
 
 let lastSessionId = null;
+
+// Static capability picker — one example per tool the agent has, so a new
+// visitor sees its range without guessing what's askable. Fixed list, no
+// backend call: unlike #suggestions (fetched from eval_scenarios.json),
+// this doesn't depend on which services exist right now. Clicking a chip
+// pre-fills the input for editing — it does not send.
+const CAPABILITY_CATEGORIES = [
+  { label: "Check health", query: "How is payments-api doing right now?" },
+  { label: "Search logs", query: "Search checkout-api's logs for timeout errors" },
+  { label: "Deployment history", query: "What was the last deployment to auth-api?" },
+  { label: "Cost breakdown", query: "What's the monthly cost breakdown for notifications?" },
+  { label: "Compare services", query: "Compare error rates across all services" },
+];
+
+function renderCapabilities() {
+  capabilitiesEl.innerHTML = "";
+  const label = document.createElement("span");
+  label.className = "text-slate-500 self-center";
+  label.textContent = "Ask about:";
+  capabilitiesEl.appendChild(label);
+  for (const cat of CAPABILITY_CATEGORIES) {
+    const btn = document.createElement("button");
+    btn.dataset.role = "capability-button";
+    btn.textContent = cat.label;
+    btn.title = cat.query;
+    btn.type = "button";
+    btn.className =
+      "rounded-full border border-white/10 bg-surface-raised px-3 py-1.5 text-slate-400 " +
+      "hover:border-accent/50 hover:text-slate-200 transition";
+    btn.addEventListener("click", () => {
+      inputEl.value = cat.query;
+      inputEl.focus();
+    });
+    capabilitiesEl.appendChild(btn);
+  }
+}
 
 function scrollToBottom(el) {
   el.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -314,10 +351,13 @@ async function sendPrompt(prompt) {
   const requestBody = { prompt, model_id: modelSelectEl.value };
   if (thinkingToggleEl.checked) requestBody.thinking_budget = 1024;
 
+  const headers = { "Content-Type": "application/json" };
+  if (liveToken) headers["Authorization"] = `Bearer ${liveToken}`;
+
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(requestBody),
     });
 
@@ -607,17 +647,21 @@ async function refreshMcpPanel() {
 
 const mcpConnectFormEl = document.getElementById("mcp-connect-form");
 const mcpDataEl = document.getElementById("mcp-data");
-const mcpTokenInputEl = document.getElementById("mcp-token-input");
-const mcpConnectBtnEl = document.getElementById("mcp-connect-btn");
+const mcpConsentEl = document.getElementById("mcp-consent");
+const mcpConsentIdentityEl = document.getElementById("mcp-consent-identity");
+const mcpConsentCancelBtnEl = document.getElementById("mcp-consent-cancel");
+const mcpConsentAuthorizeBtnEl = document.getElementById("mcp-consent-authorize");
+const mcpConnectedBannerEl = document.getElementById("mcp-connected-banner");
+const mcpConnectedEmailEl = document.getElementById("mcp-connected-email");
 
 // Toggling this only reveals/hides the panel shell — it does NOT
-// connect anything by itself. Connecting is its own explicit action
-// (the Connect button below), same as adding an MCP server in Claude
-// Desktop: you configure it, then a separate "connect" step happens
-// with a visible result, rather than a checkbox silently starting
-// background work. The panel always opens showing the connect form
-// first, never the data — nothing queries the metrics DB until a real
-// handshake has actually succeeded.
+// connect anything by itself. Connecting is its own explicit,
+// multi-step action (sign in -> review -> Authorize), same as adding
+// an MCP server in Claude Desktop or authorizing a Cloudflare Wrangler
+// OAuth grant: you see exactly what you're granting before it happens,
+// not a side effect of a checkbox. The panel always opens showing the
+// connect form first, never the data — nothing queries the metrics DB
+// until a real handshake has actually succeeded.
 mcpToggleEl.addEventListener("change", () => {
   if (mcpToggleEl.checked) {
     mcpPanelEl.classList.remove("hidden");
@@ -627,40 +671,232 @@ mcpToggleEl.addEventListener("change", () => {
   }
 });
 
-mcpConnectBtnEl.addEventListener("click", connectMcp);
+mcpConsentCancelBtnEl.addEventListener("click", cancelMcpConsent);
+mcpConsentAuthorizeBtnEl.addEventListener("click", authorizeMcpConsent);
 
-async function connectMcp() {
-  const token = mcpTokenInputEl.value.trim();
-  if (!token) {
-    mcpStatusEl.textContent = "enter a token first";
-    return;
-  }
+async function connectMcp(token) {
   mcpStatusEl.textContent = "connecting…";
-  mcpConnectBtnEl.disabled = true;
   try {
     mcpClient = new McpClient(token);
     await mcpClient.initialize();
     await mcpClient.listTools(); // confirms the handshake actually works end to end
     mcpStatusEl.textContent = "connected";
     mcpConnectFormEl.classList.add("hidden");
+    mcpConsentEl.classList.add("hidden");
     mcpDataEl.classList.remove("hidden");
     await refreshMcpPanel();
   } catch (err) {
     mcpStatusEl.textContent = `failed: ${err.message}`;
     mcpClient = null;
-  } finally {
-    mcpConnectBtnEl.disabled = false;
+    throw err;
   }
 }
 
 async function disconnectMcp() {
   mcpDataEl.classList.add("hidden");
+  mcpConnectedBannerEl.classList.add("hidden");
+  mcpConsentEl.classList.add("hidden");
   mcpConnectFormEl.classList.remove("hidden");
   mcpStatusEl.textContent = "disconnected";
+  pendingMcpCredential = null;
   if (mcpClient) {
     await mcpClient.close();
     mcpClient = null;
   }
 }
 
+// --- Demo mode / live sign-in -------------------------------------------
+// Only relevant on the public deployment (DEMO_MODE=1 server-side) — a
+// local dev run's /api/config always reports demo_mode: false and none of
+// this renders. See web/demo_replay.py and web/server.py's /auth/verify.
+
+const demoBannerEl = document.getElementById("demo-banner");
+const demoSigninEl = document.getElementById("demo-signin");
+const mcpGoogleSigninEl = document.getElementById("mcp-google-signin");
+const mcpGoogleSigninUnavailableEl = document.getElementById("mcp-google-signin-unavailable");
+let liveToken = null;
+let pendingMcpCredential = null;
+
+// Decodes a Google ID token's payload for DISPLAY only (the email shown
+// in the consent step) — NOT verification. The signature is checked
+// server-side by the inspector's /auth/verify, the only place this
+// credential is trusted for anything security-relevant.
+function decodeJwtPayloadForDisplay(token) {
+  try {
+    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64).split("").map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return {};
+  }
+}
+
+function renderSignedIn(email) {
+  demoSigninEl.textContent = `Signed in as ${email} — live mode enabled for this session`;
+}
+
+// Loaded once regardless of how many GSI buttons this page renders (the
+// live-mode banner button and/or the MCP panel's button) — appending the
+// script twice would just double-fetch it, not break anything, but
+// there's no reason to.
+let gsiScriptPromise = null;
+function ensureGsiScriptLoaded() {
+  if (!gsiScriptPromise) {
+    gsiScriptPromise = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = resolve;
+      document.body.appendChild(script);
+    });
+  }
+  return gsiScriptPromise;
+}
+
+// google.accounts.id.renderButton() captures whatever config was passed
+// to the immediately preceding initialize() call as a closure for that
+// specific button instance — so two buttons with two different callbacks
+// on the same page just need initialize() called again, with the other
+// callback, right before each one's renderButton() call. No need for the
+// HTML data-attribute auto-scan (g_id_onload/g_id_signin) or global
+// window-attached callback names; passing function references directly
+// to initialize() works and avoids polluting window.
+
+async function onDemoSignIn(response) {
+  try {
+    const res = await fetch("/auth/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential: response.credential }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      demoSigninEl.textContent = `Sign-in failed: ${data.error || "unknown error"}`;
+      return;
+    }
+    liveToken = data.live_token;
+    renderSignedIn(data.email);
+  } catch (err) {
+    demoSigninEl.textContent = `Sign-in failed: ${err.message}`;
+  }
+}
+
+async function renderSigninButton(clientId) {
+  await ensureGsiScriptLoaded();
+  window.google.accounts.id.initialize({ client_id: clientId, callback: onDemoSignIn });
+  const btn = document.createElement("div");
+  demoSigninEl.appendChild(btn);
+  window.google.accounts.id.renderButton(btn, { type: "standard", theme: "outline", size: "medium" });
+}
+
+// --- MCP panel: Google sign-in is the only way to connect — see
+// mcp-connect-form's comment in chat.html for why manual token entry
+// was removed entirely. Sign-in itself does NOT connect anything yet;
+// it only proves who you are and moves to the consent step below.
+// Nothing is sent to the inspector until Authorize is clicked.
+function onMcpGoogleSignIn(response) {
+  pendingMcpCredential = response.credential;
+  const { email } = decodeJwtPayloadForDisplay(response.credential);
+  mcpConnectFormEl.classList.add("hidden");
+  mcpConsentIdentityEl.textContent = `Signing in as ${email || "your Google account"}`;
+  mcpConsentEl.classList.remove("hidden");
+}
+
+function cancelMcpConsent() {
+  pendingMcpCredential = null;
+  mcpConsentEl.classList.add("hidden");
+  mcpConnectFormEl.classList.remove("hidden");
+  mcpStatusEl.textContent = "disconnected";
+}
+
+// Authorize is the only point that ever calls /auth/verify — this is
+// what makes Cancel meaningful (no token minted at all), not just a
+// hidden UI state with the mint already having happened silently on
+// sign-in. Posts the credential cross-origin straight to the
+// inspector's own /auth/verify (CORS already allows this — see
+// mcp_server/server.py's CHAT_UI_ORIGIN), then feeds the returned
+// mcp_token into connectMcp() — one MCP-connection code path.
+async function authorizeMcpConsent() {
+  if (!pendingMcpCredential) return;
+  mcpConsentAuthorizeBtnEl.disabled = true;
+  mcpConsentAuthorizeBtnEl.textContent = "Authorizing…";
+  try {
+    const authBase = MCP_URL.replace(/\/mcp$/, "");
+    const res = await fetch(`${authBase}/auth/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential: pendingMcpCredential }),
+    });
+    const data = await res.json();
+    pendingMcpCredential = null;
+    if (!res.ok) {
+      mcpConsentEl.classList.add("hidden");
+      mcpConnectFormEl.classList.remove("hidden");
+      mcpStatusEl.textContent = `sign-in failed: ${data.error || "unknown error"}`;
+      return;
+    }
+    await connectMcp(data.mcp_token);
+    mcpConnectedEmailEl.textContent = `Connected as ${data.email}`;
+    mcpConnectedBannerEl.classList.remove("hidden");
+  } catch (err) {
+    mcpConsentEl.classList.add("hidden");
+    mcpConnectFormEl.classList.remove("hidden");
+    mcpStatusEl.textContent = `sign-in failed: ${err.message}`;
+  } finally {
+    mcpConsentAuthorizeBtnEl.disabled = false;
+    mcpConsentAuthorizeBtnEl.textContent = "Authorize";
+  }
+}
+
+async function renderMcpGoogleSigninButton(clientId) {
+  await ensureGsiScriptLoaded();
+  window.google.accounts.id.initialize({ client_id: clientId, callback: onMcpGoogleSignIn });
+  window.google.accounts.id.renderButton(mcpGoogleSigninEl, {
+    type: "standard",
+    theme: "outline",
+    size: "medium",
+    width: 220,
+  });
+}
+
+async function loadAppConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (!res.ok) return;
+    const config = await res.json();
+    // Sequential, not concurrent: google.accounts.id.initialize() is
+    // global mutable state that renderButton() reads at call time, so
+    // each render must fully finish (initialize -> renderButton) before
+    // the next one calls initialize() again with a different callback,
+    // or the two buttons could race and end up bound to each other's.
+    if (config.demo_mode) {
+      demoBannerEl.classList.remove("hidden");
+      if (config.live_available && config.google_client_id) {
+        await renderSigninButton(config.google_client_id);
+      }
+    }
+    if (config.google_client_id) {
+      await renderMcpGoogleSigninButton(config.google_client_id);
+    } else {
+      // No manual-token fallback anymore — if the MCP server has no
+      // Google sign-in configured, connecting from this panel just
+      // isn't possible right now, and that has to be visible, not a
+      // silently empty panel.
+      mcpGoogleSigninUnavailableEl.classList.remove("hidden");
+    }
+  } catch {
+    // The demo banner is a nice-to-have, not core functionality — a
+    // failed /api/config fetch just means it stays hidden. The MCP
+    // Google button failing the same way does matter more (it's the
+    // only way to connect), but there's nothing else to fall back to
+    // here either way.
+    mcpGoogleSigninUnavailableEl.classList.remove("hidden");
+  }
+}
+
+renderCapabilities();
 loadSuggestions();
+loadAppConfig();

@@ -1,0 +1,11 @@
+# Runtime deps for web.server (the chat UI), on top of what agent/app.py
+# already needs — see agent/requirements.txt for that minimal set.
+bedrock-agentcore
+boto3
+starlette
+uvicorn
+anyio
+# app.py's record_session() and the deployed STORAGE_BACKEND=dynamodb
+# backend come from here — pinned to a specific commit; bump the SHA
+# deliberately, don't float on @main.
+git+https://github.com/sohaibsohail98/mcp-context-inspector@17e22ee6bcd361001b9e0a883302e37665726457

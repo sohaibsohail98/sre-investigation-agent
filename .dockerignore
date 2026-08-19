@@ -5,6 +5,7 @@ __pycache__/
 learn/
 mcp_server/
 tests/
+!tests/eval_scenarios.json
 terraform/
 evidence/
 data/metrics.db
