@@ -247,11 +247,19 @@ OAuth/OIDC authorization server (Cognito, Auth0, self-hosted) — and
 still not a hand-rolled OAuth 2.1 authorization server either (the
 heavier pattern investigated via a comparable project's implementation);
 Google Identity Services' one-tap credential flow gets "each person
-authenticates as themselves, revocably" without either. Known
-limitation: every valid token still sees *all* session history, not
-just its own holder's — there's no per-user data ownership in
-`metrics/store.py`. Full details: `mcp-context-inspector`'s own README,
-"Auth" section.
+authenticates as themselves, revocably" without either. **Per-owner data
+isolation**, added right after: every session is tagged with whoever
+recorded it (a Google `sub`, or `None` for the server owner), and every
+read filters to the caller's own data unless they're the owner token —
+verified against a real MCP `tools/call` dispatch, not just the REST
+layer, since the isolation is implemented via a contextvar
+(`current_owner`) set in the auth middleware, and Starlette's context
+propagation through `BaseHTTPMiddleware` into tool dispatch was the one
+part of this that genuinely needed empirical proof rather than trusting
+the docs. `record_session` is also now an authenticated MCP tool (not
+just a direct Python import), so a friend's own remote agent can push
+its own sessions in, attributed to them. Full details:
+`mcp-context-inspector`'s own README, "Auth" section.
 
 Once connected, the panel calls the same 7 MCP tools directly
 (`get_recent_sessions`, `get_tool_metrics`, `get_cost_estimate`,
