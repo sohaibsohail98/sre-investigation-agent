@@ -28,8 +28,16 @@ resource "aws_iam_role" "github_actions" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         # Scoped to main branch only — PRs/other branches can't deploy.
+        # GitHub's actual OIDC `sub` claim (confirmed via CloudTrail after
+        # this policy first rejected every request with "Not authorized"
+        # despite the owner/repo names matching exactly) is NOT the plain
+        # "repo:owner/repo:ref:..." format the old docs describe — it now
+        # embeds immutable numeric owner/repo IDs, e.g.
+        # "repo:sohaibsohail98@67048112/sre-investigation-agent@1338702610:ref:refs/heads/main".
+        # Wildcard the ID segments rather than hardcoding them (fragile —
+        # unclear whether they're stable across e.g. a repo transfer).
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = "repo:${split("/", var.github_repo)[0]}@*/${split("/", var.github_repo)[1]}@*:ref:refs/heads/main"
         }
       }
     }]
