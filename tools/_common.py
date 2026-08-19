@@ -10,7 +10,7 @@ import os
 import boto3
 
 from common.config import DEFAULT_REGION
-from common.dynamo import clean_decimal as _clean
+from mci_common.dynamo import clean_decimal as _clean
 
 TABLE_NAME = os.environ.get("INFRA_TABLE", "sre-agent-infra")
 REGION = os.environ.get("AWS_REGION", DEFAULT_REGION)
