@@ -18,23 +18,31 @@
       theme: {
         extend: {
           colors: {
-            surface: { DEFAULT: '#0b0d14', raised: '#12151f', card: '#171b28' },
-            accent: { DEFAULT: '#7c6cf6', soft: '#2a2247' },
+            surface: { DEFAULT: '#0a0d13', raised: '#12161f', card: '#161b26' },
+            accent: { DEFAULT: '#7c6cf6', 2: '#6ca8f6', soft: '#241f3d' },
             ok: '#34d399',
             warn: '#fbbf24',
             err: '#f87171',
           },
-          borderRadius: { xl: '0.875rem', '2xl': '1.25rem' },
-          boxShadow: { card: '0 8px 30px -8px rgb(0 0 0 / 0.5)' },
+          borderRadius: { xl: '0.875rem', '2xl': '1rem' },
+          boxShadow: {
+            card: '0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.55)',
+          },
         },
       },
     };
   </script>
 </head>
-<body class="min-h-screen bg-gradient-to-b from-surface to-[#141225] text-slate-200 antialiased">
+<body class="min-h-screen bg-surface text-slate-200 antialiased" style="background-image: radial-gradient(1000px 420px at 50% -10%, rgba(124,108,246,0.12), transparent 60%);">
   <main class="mx-auto max-w-6xl px-4 py-8">
     <nav class="flex items-center justify-between mb-8">
-      <h1 class="text-lg font-semibold text-slate-100">SRE Agent</h1>
+      <div class="flex items-center gap-2.5">
+        <div class="flex h-8 w-8 items-center justify-center rounded-[9px] bg-gradient-to-br from-accent to-accent-2 text-sm font-bold text-white shadow-[0_4px_16px_-4px_rgba(124,108,246,0.45)]">S</div>
+        <div>
+          <span class="block text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-2/80">SRE Investigation Agent</span>
+          <h1 class="text-base font-semibold leading-tight text-slate-100">Chat</h1>
+        </div>
+      </div>
     </nav>
 
     <article id="intro" class="rounded-2xl border border-white/5 bg-surface-card shadow-card p-5 mb-6 text-sm text-slate-400 space-y-3">
@@ -60,10 +68,11 @@
     <!-- Hidden by default; shown by chat.js only when GET /api/config
          reports demo_mode=true (the public deployment) — a local dev
          run never sees this. -->
-    <div id="demo-banner" data-role="demo-banner" class="hidden rounded-2xl border border-warn/20 bg-warn/10 shadow-card p-4 mb-6 text-sm text-slate-300 flex flex-wrap items-center justify-between gap-3">
-      <span>
-        <strong class="text-slate-100">Demo mode</strong> — answers below are replayed from a fixed set of
-        recorded investigations, not live model calls.
+    <div id="demo-banner" data-role="demo-banner" class="hidden rounded-2xl border border-warn/25 bg-gradient-to-b from-warn/10 to-surface-card shadow-card p-4 mb-6 text-sm text-slate-300 flex flex-wrap items-center justify-between gap-3">
+      <span class="flex items-center gap-2.5">
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warn/15 text-warn text-xs">&#9679;</span>
+        <span><strong class="text-slate-100">Demo mode</strong> — answers below are replayed from a fixed set of
+        recorded investigations, not live model calls.</span>
       </span>
       <span id="demo-signin" data-role="demo-signin"></span>
     </div>
@@ -132,7 +141,7 @@
 
             <button
               type="submit"
-              class="order-2 sm:order-3 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition shrink-0"
+              class="order-2 sm:order-3 rounded-xl bg-gradient-to-br from-accent to-accent-2 px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition shrink-0"
             >Send</button>
           </form>
         </div>
@@ -141,7 +150,7 @@
       <aside id="mcp-panel" data-role="mcp-panel" class="hidden lg:sticky lg:top-8 rounded-2xl border border-white/5 bg-surface-card shadow-card p-4 text-sm space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-slate-100">MCP metrics</h2>
-          <span id="mcp-status" data-role="mcp-status" class="text-xs text-slate-500">disconnected</span>
+          <span id="mcp-status" data-role="mcp-status" class="rounded-full border border-white/10 bg-surface-raised px-2 py-0.5 text-[11px] text-slate-500">disconnected</span>
         </div>
 
         <!-- Shown until a real handshake succeeds — nothing below this
@@ -166,24 +175,24 @@
              any token is minted. Authorize calls /auth/verify; Cancel
              discards the credential and mints nothing. -->
         <div id="mcp-consent" data-role="mcp-consent" class="hidden space-y-3">
-          <div class="flex items-center justify-center gap-2 py-1">
-            <div class="h-8 w-8 rounded-full bg-surface-raised border border-white/10 flex items-center justify-center text-accent text-sm">◈</div>
+          <div class="flex items-center justify-center gap-2.5 py-1">
+            <div class="h-9 w-9 rounded-full bg-surface-raised border border-white/10 flex items-center justify-center text-accent-2 text-sm shadow-card">◈</div>
             <span class="text-slate-600 text-xs">┅┅┅&gt;</span>
-            <div class="h-8 w-8 rounded-full bg-gradient-to-br from-accent to-sky-400 flex items-center justify-center text-white text-sm relative">
+            <div class="h-9 w-9 rounded-full bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center text-white text-sm relative shadow-[0_4px_16px_-4px_rgba(124,108,246,0.5)]">
               ◈
-              <span class="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-ok text-[8px] flex items-center justify-center text-white border-2 border-surface-card">✓</span>
+              <span class="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-accent-2 text-[9px] font-bold flex items-center justify-center text-white border-2 border-surface-card">✓</span>
             </div>
           </div>
-          <p class="text-center text-sm font-semibold text-slate-100">Connect to mcp-context-inspector?</p>
+          <p class="text-center text-sm font-semibold text-slate-100 tracking-tight">Connect to mcp-context-inspector?</p>
           <p id="mcp-consent-identity" data-role="mcp-consent-identity" class="text-center text-xs text-slate-500"></p>
-          <div class="rounded-lg border border-white/10 bg-surface-raised p-3 space-y-1.5 text-xs text-slate-400">
-            <div class="flex gap-2"><span class="text-accent">&bull;</span> Read your own session metrics and history</div>
-            <div class="flex gap-2"><span class="text-accent">&bull;</span> Record new sessions attributed to your account</div>
-            <div class="flex gap-2"><span class="text-accent">&bull;</span> Nothing else</div>
+          <div class="rounded-lg border border-white/10 bg-surface-raised p-3 space-y-2 text-xs text-slate-400">
+            <div class="flex gap-2.5"><span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-2 shadow-[0_0_0_3px_rgba(108,168,246,0.15)]"></span> Read your own session metrics and history</div>
+            <div class="flex gap-2.5"><span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-2 shadow-[0_0_0_3px_rgba(108,168,246,0.15)]"></span> Record new sessions attributed to your account</div>
+            <div class="flex gap-2.5"><span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-2 shadow-[0_0_0_3px_rgba(108,168,246,0.15)]"></span> Nothing else</div>
           </div>
           <div class="flex gap-2">
-            <button id="mcp-consent-cancel" data-role="mcp-consent-cancel" type="button" class="flex-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/20 transition">Cancel</button>
-            <button id="mcp-consent-authorize" data-role="mcp-consent-authorize" type="button" class="flex-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 transition">Authorize</button>
+            <button id="mcp-consent-cancel" data-role="mcp-consent-cancel" type="button" class="flex-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:border-white/20 hover:text-slate-100 transition">Cancel</button>
+            <button id="mcp-consent-authorize" data-role="mcp-consent-authorize" type="button" class="flex-1 rounded-lg bg-gradient-to-br from-accent to-accent-2 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 transition">Authorize</button>
           </div>
         </div>
 
@@ -191,8 +200,8 @@
           <!-- Brief confirmation shown right after Authorize succeeds;
                stays visible as a small persistent strip, not a toast
                that disappears the info. -->
-          <div id="mcp-connected-banner" data-role="mcp-connected-banner" class="hidden flex items-center gap-2 rounded-lg border border-ok/20 bg-ok/10 px-2.5 py-1.5 text-[11px] text-ok">
-            <span class="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-ok text-white text-[9px]">&check;</span>
+          <div id="mcp-connected-banner" data-role="mcp-connected-banner" class="hidden flex items-center gap-2.5 rounded-lg border border-ok/20 bg-ok/10 px-2.5 py-1.5 text-[11px] text-ok">
+            <span class="inline-flex items-center justify-center h-4 w-4 shrink-0 rounded-full bg-ok text-white text-[9px] font-bold">&check;</span>
             <span id="mcp-connected-email" data-role="mcp-connected-email"></span>
           </div>
 

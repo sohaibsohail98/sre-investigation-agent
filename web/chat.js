@@ -81,7 +81,7 @@ function addTurn(role, modelLabel) {
   avatar.className =
     role === "user"
       ? "h-8 w-8 shrink-0 rounded-full bg-white/10 text-slate-300 flex items-center justify-center text-sm font-semibold"
-      : "h-8 w-8 shrink-0 rounded-full bg-accent/20 text-accent flex items-center justify-center text-sm font-semibold";
+      : "h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-accent to-accent-2 text-white flex items-center justify-center text-sm font-semibold shadow-[0_2px_10px_-2px_rgba(124,108,246,0.5)]";
   avatar.textContent = role === "user" ? "Y" : "A";
 
   const col = document.createElement("div");
@@ -449,11 +449,17 @@ async function loadSuggestions() {
   suggestionsEl.appendChild(label);
   for (const q of questions) {
     const btn = document.createElement("button");
-    btn.textContent = q.length > 50 ? q.slice(0, 47) + "…" : q;
+    // Full text always renders — no fixed-character slice, which cuts
+    // words mid-way regardless of how wide the chip actually is. Instead,
+    // let CSS truncate to an intentional ellipsis at the box's real
+    // rendered width (max-w-[19rem], generous enough that most suggested
+    // questions fit whole), with the untruncated text in `title` for a
+    // hover tooltip on the rest. Click still always sends the full `q`.
+    btn.textContent = q;
     btn.title = q;
     btn.type = "button";
     btn.className =
-      "rounded-full border border-white/10 bg-surface-raised px-3 py-1.5 text-slate-300 " +
+      "max-w-[19rem] truncate rounded-full border border-white/10 bg-surface-raised px-3 py-1.5 text-slate-300 " +
       "hover:border-accent/50 hover:text-slate-100 transition";
     btn.addEventListener("click", () => sendPrompt(q));
     suggestionsEl.appendChild(btn);
@@ -581,11 +587,12 @@ function renderContextTimeline(container, totalEl, blocks) {
 
 function row(label, value) {
   const div = document.createElement("div");
-  div.className = "flex justify-between gap-2";
+  div.className = "flex justify-between gap-2 py-1 border-b border-white/5 last:border-b-0";
   const l = document.createElement("span");
+  l.className = "text-slate-500";
   l.textContent = label;
   const v = document.createElement("span");
-  v.className = "text-slate-200 font-mono";
+  v.className = "text-slate-200 font-mono truncate max-w-[55%] text-right";
   v.textContent = value;
   div.append(l, v);
   return div;
