@@ -23,3 +23,6 @@ data/metrics.db
 
 # Session/handoff working notes — not part of the shipped project.
 PLAN.md
+
+# Local-only cleanup notes, never shipped
+docs/internal/
