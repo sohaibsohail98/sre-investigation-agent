@@ -160,6 +160,18 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
+        # The full (untargeted) `terraform apply` re-evaluates this
+        # file's own `data "aws_iam_openid_connect_provider"` block (the
+        # OIDC provider this very role's trust policy is built from),
+        # which needs account-wide List — ListOpenIDConnectProviders has
+        # no resource-level ARN scoping (confirmed by the AccessDenied
+        # error itself naming Resource "oidc-provider/*", not a specific
+        # provider ARN).
+        Effect   = "Allow"
+        Action   = ["iam:ListOpenIDConnectProviders"]
+        Resource = "*"
+      },
+      {
         # Terraform state backend (the bucket/table Terraform itself uses,
         # not this project's own resources).
         Effect = "Allow"

@@ -8,6 +8,6 @@ starlette
 uvicorn
 pytest
 playwright
-# mcp_server/ + metrics/ live here now — pinned to the initial commit;
+# mcp_server/ + metrics/ live here now — pinned to a specific commit;
 # bump the SHA deliberately, don't float on @main.
-git+https://github.com/sohaibsohail98/mcp-context-inspector@91323456017feb4ffccdcb5661d28b6858cc95b2
+git+https://github.com/sohaibsohail98/mcp-context-inspector@5b8ad093f79c119540c7dbf7a02489bf882940d6
