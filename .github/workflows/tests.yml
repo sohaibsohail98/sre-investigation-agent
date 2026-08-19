@@ -1,0 +1,19 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv && uv pip install -r requirements-dev.txt
+      # Pure unit tests — no AWS credentials, no live Bedrock calls, no
+      # secrets needed. Separate from deploy-agentcore.yml's "eval" job,
+      # which costs real Bedrock invocations and only runs on push to
+      # main; this runs on every push/PR so a regression is caught
+      # immediately, for free.
+      - run: uv run python -m pytest

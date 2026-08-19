@@ -2,4 +2,4 @@ bedrock-agentcore
 boto3
 # app.py's record_session() comes from here — pinned to the initial
 # commit; bump the SHA deliberately, don't float on @main.
-git+https://github.com/sohaibsohail98/mcp-context-inspector@8bdb5aef28f071d78080e299c7b364cf64ededf2
+git+https://github.com/sohaibsohail98/mcp-context-inspector@91323456017feb4ffccdcb5661d28b6858cc95b2
