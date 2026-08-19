@@ -114,6 +114,19 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = aws_dynamodb_table.metrics.arn
       },
       {
+        # The actual root cause of every eval scenario failing in CI
+        # ("missing facts in answer" across the board, no exception —
+        # tools/_common.py's DynamoDB calls were silently AccessDenied,
+        # so every tool returned an error and the model had nothing to
+        # ground an answer in). This role never had ANY read permission
+        # on the infra table the SRE tools actually query — only
+        # table-management actions on the metrics table above. Mirrors
+        # the runtime role's identical read-only grant in main.tf.
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:Scan"]
+        Resource = aws_dynamodb_table.infra.arn
+      },
+      {
         # bedrock-agentcore-control has no resource-level ARN scoping for
         # most actions (same limitation the runtime execution role has).
         Effect   = "Allow"
