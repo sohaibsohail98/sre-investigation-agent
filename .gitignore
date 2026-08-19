@@ -20,3 +20,6 @@ data/metrics.db
 .env.*
 !.env.example
 *.pem
+
+# Session/handoff working notes — not part of the shipped project.
+PLAN.md
