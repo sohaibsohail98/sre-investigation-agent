@@ -10,6 +10,9 @@ conventions: `CLAUDE.md`.
 [![Tests](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/tests.yml)
 [![Deploy](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/deploy-agentcore.yml/badge.svg)](https://github.com/sohaibsohail98/sre-investigation-agent/actions/workflows/deploy-agentcore.yml)
 
+Live demo: **https://sre-agent.sohaibsohail.workers.dev** (runs in demo
+mode — fixture-replay, zero live Bedrock cost).
+
 ## Run it locally
 
 ```sh
