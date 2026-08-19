@@ -86,6 +86,9 @@ resource "aws_iam_role_policy" "github_actions" {
           "ecr:PutLifecyclePolicy",
           "ecr:GetLifecyclePolicy",
           "ecr:TagResource",
+          # Terraform's refresh reads the repo's tags to detect drift,
+          # not just whether it exists.
+          "ecr:ListTagsForResource",
         ]
         Resource = aws_ecr_repository.agent.arn
       },
@@ -100,6 +103,12 @@ resource "aws_iam_role_policy" "github_actions" {
           "iam:DeleteRolePolicy",
           "iam:PassRole",
           "iam:TagRole",
+          # Terraform's refresh/plan reads a role's inline+attached
+          # policies and instance-profile associations to detect drift,
+          # not just its existence — Get* alone isn't enough.
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
         ]
         Resource = aws_iam_role.runtime.arn
       },
@@ -110,6 +119,11 @@ resource "aws_iam_role_policy" "github_actions" {
           "dynamodb:DeleteTable",
           "dynamodb:DescribeTable",
           "dynamodb:TagResource",
+          # Same reasoning as the ECR ListTagsForResource grant below —
+          # Terraform's refresh reads point-in-time-recovery status and
+          # tags for every table in state, not just its existence.
+          "dynamodb:DescribeContinuousBackups",
+          "dynamodb:ListTagsOfResource",
         ]
         Resource = aws_dynamodb_table.metrics.arn
       },
@@ -121,9 +135,19 @@ resource "aws_iam_role_policy" "github_actions" {
         # ground an answer in). This role never had ANY read permission
         # on the infra table the SRE tools actually query — only
         # table-management actions on the metrics table above. Mirrors
-        # the runtime role's identical read-only grant in main.tf.
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:Scan"]
+        # the runtime role's identical read-only grant in main.tf. Also
+        # needs the same Describe*/List* set as the metrics table above
+        # since this table is in Terraform state too (Terraform reads
+        # every managed resource on refresh, not just ones this policy
+        # was originally written for).
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:Scan",
+          "dynamodb:DescribeTable",
+          "dynamodb:DescribeContinuousBackups",
+          "dynamodb:ListTagsOfResource",
+        ]
         Resource = aws_dynamodb_table.infra.arn
       },
       {
